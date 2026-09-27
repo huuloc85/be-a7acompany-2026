@@ -23,7 +23,7 @@ class CheckRequestForm
         }
 
         // Danh sách employee_id được phép duyệt đơn
-        $allowedEmployeeIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
+        $allowedEmployeeIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
 
         // Kiểm tra employee_id
         if (in_array($user->id, $allowedEmployeeIds)) {

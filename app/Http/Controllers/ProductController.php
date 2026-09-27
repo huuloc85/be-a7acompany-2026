@@ -514,9 +514,9 @@ class ProductController extends Controller
         DB::beginTransaction();
         try {
             $status = 0;
-            $employeeCode = Auth()->user()->code;
+            $employeeCode = Auth()->user()->id;
             $categoryCalender = Auth()->user()->category_celender->id;
-            if ($employeeCode != '19010400') {
+            if ($employeeCode != '25060400') {
                 if ($categoryCalender != 2) {
                     $status = 1;
                 } else {

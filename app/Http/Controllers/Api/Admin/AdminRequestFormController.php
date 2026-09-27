@@ -144,7 +144,7 @@ class AdminRequestFormController extends Controller
                 $currentUserId = Auth::id();
 
                 // Danh sách supervisor employee IDs
-                $supervisorIds = [19010400, 20020700, 18010900, 19010300, 20102800, 22011800];
+                $supervisorIds = [25060400, 22120700, 22120900, 22120300, 22122800, 22121800];
 
                 if ($requestForm->type === RequestForm::TYPE_GIAY_UY_QUYEN) {
                     // Đơn ủy quyền: Admin không ký thêm chữ ký, chỉ duyệt
@@ -206,7 +206,7 @@ class AdminRequestFormController extends Controller
                     $hasManagerSignature = ! empty($requestForm->digital_signature_manager);
 
                     // Danh sách supervisor employee IDs
-                    $supervisorIds = [19010400, 20020700, 18010900, 19010300, 20102800, 22011800];
+                    $supervisorIds = [25060400, 22120700, 22120900, 22120300, 22122800, 22121800];
                     $isCurrentUserSupervisor = in_array($currentUserId, $supervisorIds);
                     $isRequestFromSupervisor = in_array($requestForm->employee_id, $supervisorIds);
 

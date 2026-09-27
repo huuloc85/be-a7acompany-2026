@@ -112,7 +112,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
+        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -209,7 +209,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
+        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -289,7 +289,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
+        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -414,7 +414,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
+        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
