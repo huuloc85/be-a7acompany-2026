@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Helpers\HandleError;
+use App\Helpers\SeptemberAttendanceHours;
 use App\Models\ScheduleDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -399,7 +400,11 @@ class AttendanceCalculationController extends BaseController
             $break_time = 0;
 
             // Only calculate total hours if both time_in and time_out are available
-            if ($time_in && $time_out) {
+            if ($time_in && $time_out && $date >= SeptemberAttendanceHours::EFFECTIVE_DATE) {
+                $total_hours = SeptemberAttendanceHours::calculate(
+                    $date, $shift, (string) $calendar_category_id, $time_in, $time_out
+                );
+            } elseif ($time_in && $time_out) {
                 $start = Carbon::parse($time_in);
                 $end = Carbon::parse($time_out);
 

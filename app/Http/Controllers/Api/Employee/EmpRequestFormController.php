@@ -112,7 +112,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800'];
+        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -209,7 +209,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800'];
+        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -289,7 +289,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800'];
+        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -349,7 +349,7 @@ class EmpRequestFormController extends Controller
             if ($request->hasFile('digital_signature_supervisor')) {
                 // Case 1: File upload (multipart/form-data)
                 $file = $request->file('digital_signature_supervisor');
-                $filename = 'digital_signature_supervisor_' . $currentUserId . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $filename = 'digital_signature_supervisor_'.$currentUserId.'_'.time().'.'.$file->getClientOriginalExtension();
                 $path = $file->storeAs('digital_signatures', $filename, 'public');
                 $updateData['digital_signature_supervisor'] = $path;
             } elseif ($request->has('digital_signature_supervisor') && is_string($request->input('digital_signature_supervisor'))) {
@@ -363,8 +363,8 @@ class EmpRequestFormController extends Controller
                     $imageData = base64_decode($base64Data);
 
                     if ($imageData !== false) {
-                        $filename = 'digital_signature_supervisor_' . $currentUserId . '_' . time() . '.' . $extension;
-                        $path = 'digital_signatures/' . $filename;
+                        $filename = 'digital_signature_supervisor_'.$currentUserId.'_'.time().'.'.$extension;
+                        $path = 'digital_signatures/'.$filename;
                         Storage::disk('public')->put($path, $imageData);
                         $updateData['digital_signature_supervisor'] = $path;
                     }
@@ -394,7 +394,7 @@ class EmpRequestFormController extends Controller
                 'data' => $requestForm,
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([
@@ -414,7 +414,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800'];
+        $supervisorIds = ['19010400', '20020700', '18010900', '19010300', '20102800', '22011800'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -488,7 +488,7 @@ class EmpRequestFormController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([
@@ -550,7 +550,7 @@ class EmpRequestFormController extends Controller
                 if ($request->hasFile($fieldName)) {
                     // Case 1: File upload (multipart/form-data)
                     $file = $request->file($fieldName);
-                    $filename = $fieldName . '_' . Auth::id() . '_' . time() . '.' . $file->getClientOriginalExtension();
+                    $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$file->getClientOriginalExtension();
                     $path = $file->storeAs('digital_signatures', $filename, 'public');
                     $updateData[$fieldName] = $path;
                 } elseif ($request->has($fieldName) && is_string($request->input($fieldName))) {
@@ -565,8 +565,8 @@ class EmpRequestFormController extends Controller
                         $imageData = base64_decode($base64Data);
 
                         if ($imageData !== false) {
-                            $filename = $fieldName . '_' . Auth::id() . '_' . time() . '.' . $extension;
-                            $path = 'digital_signatures/' . $filename;
+                            $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$extension;
+                            $path = 'digital_signatures/'.$filename;
                             Storage::disk('public')->put($path, $imageData);
                             $updateData[$fieldName] = $path;
                         }
@@ -607,8 +607,8 @@ class EmpRequestFormController extends Controller
 
             // Tạo URL để xem danh sách đơn cần duyệt
             $frontendUrl = config('app.frontend_url', 'https://a7acompany.com');
-            $approvalUrlSupervisor = $frontendUrl . '/employee/request-forms';
-            $approvalUrlManager = $frontendUrl . '/request-forms';
+            $approvalUrlSupervisor = $frontendUrl.'/employee/request-forms';
+            $approvalUrlManager = $frontendUrl.'/request-forms';
 
             // Gửi email thông báo cho supervisor (nếu có)
             if ($supervisor && $supervisor->email) {
@@ -626,8 +626,8 @@ class EmpRequestFormController extends Controller
                         'approval_url' => $approvalUrlSupervisor,
                     ]);
                 } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
-                    Log::error('❌ Lỗi khi thêm job gửi email cho supervisor vào queue: ' . $e->getMessage());
+                    \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+                    Log::error('❌ Lỗi khi thêm job gửi email cho supervisor vào queue: '.$e->getMessage());
                 }
             }
 
@@ -650,13 +650,13 @@ class EmpRequestFormController extends Controller
                     'approval_url' => $approvalUrlManager,
                 ]);
             } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
-                Log::error('❌ Lỗi khi thêm job gửi email cho quản lý nhà máy vào queue: ' . $e->getMessage());
+                \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+                Log::error('❌ Lỗi khi thêm job gửi email cho quản lý nhà máy vào queue: '.$e->getMessage());
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Đơn yêu cầu đã được tạo thành công' . ($supervisor ? ' và đã gửi thông báo cho tổ trưởng' : ''),
+                'message' => 'Đơn yêu cầu đã được tạo thành công'.($supervisor ? ' và đã gửi thông báo cho tổ trưởng' : ''),
                 'data' => $requestForm,
                 'supervisor_notified' => $supervisor ? [
                     'id' => $supervisor->id,
@@ -665,7 +665,7 @@ class EmpRequestFormController extends Controller
                 ] : null,
             ], 201);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([
@@ -761,7 +761,7 @@ class EmpRequestFormController extends Controller
                     }
 
                     $file = $request->file($fieldName);
-                    $filename = $fieldName . '_' . Auth::id() . '_' . time() . '.' . $file->getClientOriginalExtension();
+                    $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$file->getClientOriginalExtension();
                     $updateData[$fieldName] = $file->storeAs('digital_signatures', $filename, 'public');
                 } elseif ($request->has($fieldName) && is_string($request->input($fieldName))) {
                     // Case 2: Base64 string (từ frontend canvas/signature pad)
@@ -779,8 +779,8 @@ class EmpRequestFormController extends Controller
                         $imageData = base64_decode($base64Data);
 
                         if ($imageData !== false) {
-                            $filename = $fieldName . '_' . Auth::id() . '_' . time() . '.' . $extension;
-                            $path = 'digital_signatures/' . $filename;
+                            $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$extension;
+                            $path = 'digital_signatures/'.$filename;
                             Storage::disk('public')->put($path, $imageData);
                             $updateData[$fieldName] = $path;
                         }
@@ -814,7 +814,8 @@ class EmpRequestFormController extends Controller
                 'data' => $requestForm,
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Có lỗi xảy ra khi cập nhật đơn yêu cầu',
@@ -868,7 +869,8 @@ class EmpRequestFormController extends Controller
                 'message' => 'Đơn yêu cầu đã được xóa thành công',
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json([
                 'success' => false,
                 'message' => 'Có lỗi xảy ra khi xóa đơn yêu cầu',
@@ -1007,7 +1009,7 @@ class EmpRequestFormController extends Controller
                     }
 
                     // Store new signature
-                    $filename = time() . '_delegator_' . $file->getClientOriginalName();
+                    $filename = time().'_delegator_'.$file->getClientOriginalName();
                     $path = $file->storeAs('signatures', $filename, 'public');
 
                     $updateData['digital_signature_delegator'] = $path;
@@ -1027,7 +1029,7 @@ class EmpRequestFormController extends Controller
                     }
 
                     // Store new signature
-                    $filename = time() . '_authorized_' . $file->getClientOriginalName();
+                    $filename = time().'_authorized_'.$file->getClientOriginalName();
                     $path = $file->storeAs('signatures', $filename, 'public');
 
                     $updateData['digital_signature_authorized'] = $path;
@@ -1073,7 +1075,7 @@ class EmpRequestFormController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([
@@ -1209,7 +1211,7 @@ class EmpRequestFormController extends Controller
                 }
 
                 // Store new signature
-                $filename = time() . '_authorized_' . $file->getClientOriginalName();
+                $filename = time().'_authorized_'.$file->getClientOriginalName();
                 $path = $file->storeAs('signatures', $filename, 'public');
 
                 $updateData['digital_signature_authorized'] = $path;
@@ -1240,7 +1242,7 @@ class EmpRequestFormController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([
@@ -1330,7 +1332,7 @@ class EmpRequestFormController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([

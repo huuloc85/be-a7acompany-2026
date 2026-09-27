@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\Admin\HistoryController;
 use App\Http\Controllers\Api\Admin\LogController;
 use App\Http\Controllers\Api\Admin\PermissionController;
 use App\Http\Controllers\Api\Admin\ProductController;
+use App\Http\Controllers\Api\Admin\QuantityAttendanceController;
 use App\Http\Controllers\Api\Admin\RBACController;
 use App\Http\Controllers\Api\Admin\RoleController;
 use App\Http\Controllers\Api\Admin\SalaryController;
@@ -117,6 +118,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
             // Route::post('/import', [AttendanceController::class, 'import']);
             // Route::get('/export/{id}', [AttendanceController::class, 'exportById']);
         });
+        Route::get('/quantity-report/employees', [QuantityAttendanceController::class, 'employees']);
+        Route::get('/quantity-report', [QuantityAttendanceController::class, 'index']);
         Route::get('/calculate', [AttendanceCalculationController::class, 'calculate']);
         Route::get('/', [AttendanceHistoryController::class, 'detail']);
     });

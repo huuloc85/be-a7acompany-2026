@@ -144,7 +144,7 @@ class AdminRequestFormController extends Controller
                 $currentUserId = Auth::id();
 
                 // Danh sách supervisor employee IDs
-                $supervisorIds = [19010400, 20020700, 18010900, 19010300, 20102800];
+                $supervisorIds = [19010400, 20020700, 18010900, 19010300, 20102800, 22011800];
 
                 if ($requestForm->type === RequestForm::TYPE_GIAY_UY_QUYEN) {
                     // Đơn ủy quyền: Admin không ký thêm chữ ký, chỉ duyệt
@@ -206,7 +206,7 @@ class AdminRequestFormController extends Controller
                     $hasManagerSignature = ! empty($requestForm->digital_signature_manager);
 
                     // Danh sách supervisor employee IDs
-                    $supervisorIds = [19010400, 20020700, 18010900, 19010300, 20102800];
+                    $supervisorIds = [19010400, 20020700, 18010900, 19010300, 20102800, 22011800];
                     $isCurrentUserSupervisor = in_array($currentUserId, $supervisorIds);
                     $isRequestFromSupervisor = in_array($requestForm->employee_id, $supervisorIds);
 
@@ -340,7 +340,7 @@ class AdminRequestFormController extends Controller
                 ]),
             ]);
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
 
             return response()->json([
