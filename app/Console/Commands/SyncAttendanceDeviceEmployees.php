@@ -319,38 +319,7 @@ class SyncAttendanceDeviceEmployees extends Command
 
     private function postEmployeeToDevice(string $employeeId, string $employeeName): void
     {
-        $deviceIp = config('acs.device_ip');
-        $username = config('acs.username');
-        $password = config('acs.password');
-        $url = "http://{$deviceIp}/ISAPI/AccessControl/UserInfo/Record?format=json";
-
-        $response = Http::withDigestAuth($username, $password)
-            ->timeout(10)
-            ->post($url, [
-                'UserInfo' => [
-                    'employeeNo' => $employeeId,
-                    'name' => $employeeName,
-                    'userType' => 'normal',
-                    'Valid' => [
-                        'enable' => true,
-                        'beginTime' => '2026-01-01T00:00:00',
-                        'endTime' => '2036-01-01T23:59:59',
-                        'timeType' => 'local',
-                    ],
-                ],
-            ]);
-
-        if ($response->successful()) {
-            return;
-        }
-
-        $body = $response->body();
-
-        if (str_contains(strtolower($body), 'exist')) {
-            return;
-        }
-
-        throw new \RuntimeException("Device HTTP {$response->status()}: {$body}");
+        app(\App\Services\AttendanceDeviceEmployeeService::class)->sync($employeeId, $employeeName);
     }
 
     private function deleteEmployeeFromDevice(string $employeeId): void

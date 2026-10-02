@@ -88,6 +88,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
 
     // Employees (Quản Lý Nhân Sự)
     Route::middleware(['api.can:view_employee_management'])->prefix('employees')->group(function () {
+        Route::post('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'store']);
+        Route::get('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'show']);
         Route::get('/trash', [EmployeeController::class, 'getTrashEmployees']);
         Route::post('/restore/{id}', [EmployeeController::class, 'restoreEmployee']);
         Route::delete('/trash/force-delete-all', [EmployeeController::class, 'forceDeleteAllTrash']); // Xoá vĩnh viễn tất cả quá hạn
@@ -109,6 +111,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
 
     // Attendance Records (Quản Lý Chấm Công)
     Route::middleware(['api.can:view_attendance'])->prefix('attendances')->group(function () {
+        Route::get('/device-imports', [\App\Http\Controllers\Api\Admin\AttendanceImportController::class, 'index']);
+        Route::post('/device-imports', [\App\Http\Controllers\Api\Admin\AttendanceImportController::class, 'store'])->middleware('throttle:10,1');
         Route::prefix('history')->group(function () {
             Route::get('/', [AttendanceHistoryController::class, 'index']);
             Route::get('/{id}', [AttendanceHistoryController::class, 'show']);

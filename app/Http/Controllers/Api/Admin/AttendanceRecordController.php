@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
-use App\Models\AttendanceRecord;
+use App\Models\Employee;
+use App\Services\AttendanceEventWriter;
+use App\Support\AttendanceEmployeeCode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -41,11 +43,14 @@ class AttendanceRecordController extends BaseController
 
         $minorCode = 0;
         $majorCode = 0;
-        $searchId = '123456';
+        $searchId = (string) \Illuminate\Support\Str::uuid();
 
         $eventRows = [];
+        $unmatchedEvents = [];
+        $employeeIds = Employee::withTrashed()->pluck('id')->mapWithKeys(fn ($id) => [(string) $id => true])->all();
         $searchPosition = 0;
         $maxResults = 30;
+        $writer = new AttendanceEventWriter;
 
         while (true) {
             $payload = [
@@ -74,10 +79,20 @@ class AttendanceRecordController extends BaseController
                 $events = $acs['InfoList'] ?? [];
 
                 foreach ($events as $ev) {
-                    $employeeCode = trim($ev['employeeNoString'] ?? '');
+                    $employeeCode = AttendanceEmployeeCode::resolve((string) ($ev['employeeNoString'] ?? ''));
 
                     // Bỏ qua nếu không có mã nhân viên
                     if (empty($employeeCode)) {
+                        continue;
+                    }
+
+                    if (! isset($employeeIds[$employeeCode])) {
+                        $unmatchedEvents[] = [
+                            'Time' => $ev['time'] ?? '',
+                            'Name' => $ev['name'] ?? '',
+                            'EmployeeNo' => $employeeCode,
+                        ];
+
                         continue;
                     }
 
@@ -88,15 +103,7 @@ class AttendanceRecordController extends BaseController
                     ];
 
                     // Lưu dữ liệu hợp lệ vào database
-                    AttendanceRecord::updateOrCreate(
-                        [
-                            'employee_code' => $employeeCode,
-                            'datetime' => Carbon::parse($ev['time'] ?? null),
-                        ],
-                        // [
-                        //     'name' => $ev['name'] ?? '',
-                        // ]
-                    );
+                    $writer->store($employeeCode, Carbon::parse($ev['time'] ?? null));
                 }
 
                 $numReturned = $acs['numOfMatches'] ?? 0;
@@ -106,9 +113,14 @@ class AttendanceRecordController extends BaseController
                     break;
                 }
 
+                if ($numReturned <= 0) {
+                    throw new \RuntimeException('Thiết bị không trả thêm dữ liệu dù chưa hết lịch sử chấm công.');
+                }
+
                 $searchPosition += $numReturned;
             } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+                \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
                 return response()->json(['error' => 'Exception occurred', 'message' => $e->getMessage()], 500);
             }
         }
@@ -118,6 +130,8 @@ class AttendanceRecordController extends BaseController
             'endTime' => $endTimeStr,
             'total' => count($eventRows),
             'events' => $eventRows,
+            'unmatched_total' => count($unmatchedEvents),
+            'unmatched_events' => $unmatchedEvents,
         ]);
     }
 }
