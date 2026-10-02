@@ -37,6 +37,56 @@ Web xác nhận → API host lưu `attendance_device_requests` → máy Mac đ�
 
 `php vendor/bin/phpunit --testsuite Unit` dùng SQLite bộ nhớ cho hàng đợi và HTTP giả lập cho ISAPI; không tạo hồ sơ trên máy thật.
 
+## Tự lấy công và chạy nền trên Windows
+
+Chỉ bật tại máy công ty kết nối được thiết bị LAN và database host. Cập nhật code BE mới lên máy đó trước. Không cần FE, `artisan serve`, `schedule:work` hay migration mới cho chế độ này (hai bảng hàng đợi trước đó vẫn phải có).
+
+`--auto-import` bật việc xếp yêu cầu hôm qua + hôm nay theo giờ Việt Nam. Sau khi yêu cầu hoàn tất/thất bại ít nhất 5 phút, bridge sẽ xếp lại để lấy lượt mới. Lượt đầu được xếp ngay. Không chạy chồng yêu cầu cùng khoảng ngày; pending/processing được giữ nguyên, lease cũ vẫn do hàng đợi phục hồi. Khoảng ngày tự động thay đổi khi qua nửa đêm. Yêu cầu thủ công vẫn được xử lý theo thứ tự hàng đợi. Nếu máy tắt nhiều ngày, chọn thủ công khoảng bị thiếu trên web; chế độ tự động chỉ bù hôm qua và hôm nay.
+
+### Cài một lần
+
+1. Chuẩn bị PHP, `vendor` và `.env` trong thư mục BE trên ổ đĩa local, không dùng ổ mạng được map theo user. DB phải đúng database của web, cấu hình `acs` phải trỏ máy chấm công. Dừng các vòng PowerShell bridge cũ bằng Ctrl+C; không để một bridge ngoài LAN cùng nhận hàng đợi này.
+2. Mở **Windows PowerShell → Run as administrator**, vào thư mục BE rồi chạy:
+
+```powershell
+php artisan config:clear
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-attendance-bridge.ps1
+```
+
+Nếu PHP không có trong PATH, truyền đường dẫn thật, ví dụ:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-attendance-bridge.ps1 -PhpPath "C:\php\php.exe"
+```
+
+Bộ cài tạo và khởi động task `A7A-Attendance-Bridge`: chạy lúc Windows khởi động, không cần đăng nhập. Task chạy với tài khoản SYSTEM; chỉ cho người quản trị tin cậy sửa thư mục BE, các script và `.env`. Task dùng đường dẫn PHP tuyệt đối, không dựa vào PATH của SYSTEM. Không tự sửa firewall, quyền database hoặc chế độ ngủ. Nếu task đã có, bộ cài dừng mà không ghi đè.
+
+Runner kiểm tra hàng đợi 15 giây sau mỗi lượt, xử lý tuần tự và ghi log theo ngày tại `storage/logs/attendance-bridge-YYYY-MM-DD.log`. Task tự khởi động lại sau 1 phút nếu runner bị thoát lỗi. Máy phải đang bật/không ngủ; tắt Sleep khi cắm điện trong Windows Settings nếu cần chạy liên tục. Khi chỉ khóa màn hình, task vẫn chạy.
+
+### Quản lý task (PowerShell Administrator)
+
+```powershell
+Get-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+Get-ScheduledTaskInfo -TaskName "A7A-Attendance-Bridge"
+# Dừng (nếu đang lấy công, checkpoint ngày đã hoàn tất vẫn giữ):
+Stop-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+# Chạy lại sau cập nhật code/cấu hình:
+Start-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+# Tắt tự khởi động; lệnh Stop phía trên dừng lượt đang chạy:
+Disable-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+# Bật lại tự khởi động:
+Enable-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+```
+
+Để chỉ chạy thủ công (không cài task), giữ cửa sổ PowerShell này mở:
+
+```powershell
+$env:ATTENDANCE_DEVICE_BRIDGE="1"
+while ($true) { php artisan attendance:device-bridge --once --auto-import --no-interaction; Start-Sleep -Seconds 15 }
+```
+
+Script Windows chưa được xác minh trên máy công ty. Theo dõi log và kết quả trên web sau khi cài; task báo Running chỉ chứng minh runner đang hoạt động, không chứng minh lấy công thành công. Không bật `--auto-import` trên host hoặc Mac ngoài LAN.
+
 ## Lấy lịch sử chấm công theo ngày trên web
 
 - Trong **Quản lý chấm công**, bấm **Lấy dữ liệu máy chấm công**, chọn từ ngày–đến ngày (tối đa 31 ngày, không ngày tương lai, giờ Việt Nam), rồi xác nhận.
