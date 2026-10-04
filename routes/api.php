@@ -144,8 +144,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::post('/delete-all', [LogController::class, 'deleteAll']);
 
         // System Logs from laravel.log
-        Route::get('/system', [LogController::class, 'getSystemLogs']);
-        Route::delete('/system/clear', [LogController::class, 'clearSystemLogs']);
+        Route::get('/system', [LogController::class, 'getSystemLogs'])->middleware('api.permission');
+        Route::delete('/system/clear', [LogController::class, 'clearSystemLogs'])->middleware('api.permission');
     });
 
     Route::middleware(['api.can:view_salary_total'])->prefix('salaries')->group(function () {

@@ -149,11 +149,11 @@ class RBACController extends BaseController
             }
 
             // Tự động tìm số tiếp theo chưa bị trùng
-            $maxPhoneNumber = Employee::where('phone', 'like', 'ctyvinhvinhphat%')
+            $maxPhoneNumber = Employee::withTrashed()->where('phone', 'like', 'ctyvinhvinhphat%')
                 ->selectRaw("MAX(CAST(SUBSTRING(phone, LENGTH('ctyvinhvinhphat')+1) AS UNSIGNED)) as max_number")
                 ->value('max_number') ?? 0;
 
-            $maxAdminNumber = Employee::where('id', 'like', 'Admin%')
+            $maxAdminNumber = Employee::withTrashed()->where('id', 'like', 'Admin%')
                 ->selectRaw('MAX(CAST(SUBSTRING(id, 6) AS UNSIGNED)) as max_number')
                 ->value('max_number') ?? 0;
 
@@ -163,13 +163,13 @@ class RBACController extends BaseController
             $phone = 'ctyvinhvinhphat'.$nextNumber;
 
             // Đề phòng edge case: loop tìm số chưa dùng
-            while (Employee::where('id', $adminId)->orWhere('phone', $phone)->exists()) {
+            while (Employee::withTrashed()->where('id', $adminId)->orWhere('phone', $phone)->exists()) {
                 $nextNumber++;
                 $adminId = 'Admin'.$nextNumber;
                 $phone = 'ctyvinhvinhphat'.$nextNumber;
             }
 
-            $adminUser = Employee::create([
+            $adminUser = new Employee([
                 'id' => $adminId,
                 'name' => $validated['name'],
                 'phone' => $phone,
@@ -177,6 +177,9 @@ class RBACController extends BaseController
                 'role_id' => $targetRole->id,
                 'calendar_category_id' => 3,
             ]);
+            // This endpoint supplies a string ID, not a database-generated ID.
+            $adminUser->incrementing = false;
+            $adminUser->save();
 
             return response()->json([
                 'message' => 'Tạo thành công!',
@@ -189,7 +192,7 @@ class RBACController extends BaseController
                 ],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             throw $e;
         } catch (\Throwable $e) {
             Log::error('RBAC create admin user error', [
@@ -219,7 +222,8 @@ class RBACController extends BaseController
                 'permissions' => $role->permissions,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'Role không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('RBAC get role permissions error', [
@@ -372,7 +376,8 @@ class RBACController extends BaseController
                 'all_permissions' => $allPermissions,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'User không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('RBAC get user permissions error', [
@@ -415,7 +420,8 @@ class RBACController extends BaseController
                 'direct_permissions_count' => $count,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'User không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('RBAC save user permissions error', [
