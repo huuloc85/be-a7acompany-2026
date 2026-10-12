@@ -6,6 +6,7 @@ use App\Helpers\HandleError;
 use App\Helpers\SeptemberAttendanceHours;
 use App\Models\AttendanceRecord;
 use App\Models\ScheduleDetail;
+use App\Services\AttendanceDailyResultStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -163,7 +164,7 @@ class AttendanceHistoryController extends BaseController
                 })
                 ->select([
                     'schedule_details.employee_id',
-                    'employees.name',
+                    'employees.name as name',
                     'schedule_details.schedule_id',
                     'employees.calendar_category_id',
                     'calendar_categories.name as calendar_category_name',
@@ -172,7 +173,7 @@ class AttendanceHistoryController extends BaseController
                     'schedule_details.is_wc_trash',
                     'schedule_details.is_eat_room',
                     'schedule_details.hnhc',
-                    'schedule_details.date',
+                    'schedule_details.date as date',
                     'attendance_records.datetime',
                     'attendance_records.time',
                     'employees.company',
@@ -184,8 +185,8 @@ class AttendanceHistoryController extends BaseController
 
             if (count($arrayDate) !== 2) {
                 $query->whereBetween('schedule_details.date', [
-                    Carbon::now()->startOfMonth(),
-                    Carbon::now(),
+                    Carbon::now()->startOfMonth()->toDateString(),
+                    Carbon::now()->toDateString(),
                 ]);
             } elseif ($includeCalculation) {
                 // Store original date range for final filtering when calculating
@@ -327,6 +328,7 @@ class AttendanceHistoryController extends BaseController
 
                 // Calculate attendance results (time_in, time_out, total_hours, shift, day_type, etc.)
                 $result = $this->calculateAttendances($result);
+                app(AttendanceDailyResultStore::class)->synchronize($result, $request);
             } else {
                 // Original filtering for non-calculation mode
                 if ($arrayDate && count($arrayDate) === 2) {
