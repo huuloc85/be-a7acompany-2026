@@ -35,13 +35,23 @@ class AttendanceDeviceBridge extends Command
                 break;
             }
             try {
-                $employee = Employee::find($job->employee_id);
+                $deleting = ($job->action ?? 'sync') === 'delete';
+                $employee = $deleting ? Employee::withTrashed()->find($job->employee_id) : Employee::find($job->employee_id);
                 if (! $employee || in_array((int) $employee->role_id, [1, 15, 21, 22], true)) {
                     $queue->finish($job, 'Nhân viên đã xóa hoặc thuộc nhóm không đồng bộ.');
 
                     continue;
                 }
-                $device->sync((string) $employee->id, $employee->name);
+                if ($deleting) {
+                    if (! $job->employee_name || $job->employee_name !== $employee->name) {
+                        $queue->finish($job, 'Tên hồ sơ đã thay đổi. Kiểm tra nhân viên rồi xác nhận xóa lại.');
+
+                        continue;
+                    }
+                    app(\App\Services\AttendanceDeviceDeleteService::class)->delete((string) $employee->id, $job->employee_name);
+                } else {
+                    $device->sync((string) $employee->id, $employee->name);
+                }
                 $queue->finish($job);
                 $this->info('Đã xác minh đồng bộ yêu cầu '.$job->id);
             } catch (ConnectionException $e) {

@@ -27,6 +27,7 @@ class AttendanceDeviceRequestServiceTest extends TestCase
         Schema::swap($capsule->getConnection()->getSchemaBuilder());
         $migration = require __DIR__.'/../../database/migrations/2026_09_30_000001_create_attendance_device_requests_table.php';
         $migration->up();
+        (require __DIR__.'/../../database/migrations/2026_10_13_000001_add_device_request_action.php')->up();
         $this->queue = new AttendanceDeviceRequestService;
         Carbon::setTestNow('2026-09-30 08:00:00');
     }
@@ -86,5 +87,44 @@ class AttendanceDeviceRequestServiceTest extends TestCase
         Carbon::setTestNow('2026-10-01 08:00:00');
         self::assertSame('pending', DB::table('attendance_device_requests')->first()->status);
         self::assertSame('123', $this->queue->claim()->employee_id);
+    }
+
+    public function test_delete_then_readd_reuses_row_and_legacy_workers_cannot_claim_delete(): void
+    {
+        $this->queue->enqueue('123', 'admin');
+        $this->queue->finish($this->queue->claim());
+        $deleted = $this->queue->enqueue('123', 'admin', 'delete', 'Example');
+        self::assertSame('delete_pending', $deleted->status);
+        self::assertFalse(DB::table('attendance_device_requests')->whereIn('status', ['pending', 'processing'])->exists());
+        $job = $this->queue->claim();
+        self::assertSame('delete_processing', $job->status);
+        self::assertSame('Example', $job->employee_name);
+        self::assertSame($job->claim_token, $this->queue->enqueue('123', 'admin', 'delete', 'Example')->claim_token);
+        $this->queue->finish($job);
+        $readd = $this->queue->enqueue('123', 'admin');
+        self::assertSame('sync', $readd->action);
+        self::assertSame('pending', $readd->status);
+        self::assertSame(1, DB::table('attendance_device_requests')->count());
+    }
+
+    public function test_opposite_action_cannot_replace_active_request(): void
+    {
+        $this->queue->enqueue('123', 'admin', 'delete', 'Example');
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\ConflictHttpException::class);
+        $this->queue->enqueue('123', 'admin');
+    }
+
+    public function test_stale_delete_claim_is_recovered_without_allowing_old_worker_to_finish(): void
+    {
+        $this->queue->enqueue('123', 'admin', 'delete', 'Example');
+        $old = $this->queue->claim();
+        Carbon::setTestNow('2026-09-30 08:06:00');
+        $new = $this->queue->claim();
+        self::assertSame('delete_processing', $new->status);
+        self::assertNotSame($old->claim_token, $new->claim_token);
+        $this->queue->finish($old);
+        self::assertSame('delete_processing', DB::table('attendance_device_requests')->first()->status);
+        $this->queue->finish($new);
+        self::assertSame('succeeded', DB::table('attendance_device_requests')->first()->status);
     }
 }

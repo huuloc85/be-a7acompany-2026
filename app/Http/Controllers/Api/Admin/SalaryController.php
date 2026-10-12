@@ -24,7 +24,7 @@ class SalaryController extends BaseController
     {
         try {
             $salaries = QueryBuilder::for(SalaryManager::class)
-                ->select('id', 'title', 'start_date', 'end_date', 'total', 'created_at', 'updated_at')
+                ->select('id', 'title', 'start_date', 'end_date', 'date_show', 'total', 'status', 'revision', 'calculator_key', 'published_at', 'created_at', 'updated_at')
                 ->allowedFilters('title', 'start_date', 'end_date', 'total', 'created_at', 'updated_at')
                 ->defaultSort('-id')
                 ->allowedSorts(['id', 'title', 'start_date', 'end_date', 'total', 'created_at', 'updated_at']);
@@ -45,6 +45,16 @@ class SalaryController extends BaseController
     {
         try {
             $salary = SalaryManager::query()->findOrFail($id);
+
+            if ($salary->calculator_key) {
+                $snapshot = DB::table('payroll_snapshots')->where('salary_id', $id)->first();
+                $draft = $snapshot ? json_decode($snapshot->draft, true) : null;
+                if ($draft && explode(':', $salary->calculator_key)[0] !== $request->input('company', 'vvp')) {
+                    $draft['rows'] = [];
+                }
+
+                return response()->json(['category' => [], 'salary' => [], 'salaryDetail' => [], 'attendance' => [], 'snapshot' => $draft, 'manager' => $salary]);
+            }
 
             $company = $request->input('company', 'vvp');
             if (! in_array($company, ['vvp', 'a7a'])) {

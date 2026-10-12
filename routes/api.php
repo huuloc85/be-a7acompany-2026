@@ -90,6 +90,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
     Route::middleware(['api.can:view_employee_management'])->prefix('employees')->group(function () {
         Route::post('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'store']);
         Route::get('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'show']);
+        Route::delete('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'destroy']);
         Route::get('/trash', [EmployeeController::class, 'getTrashEmployees']);
         Route::post('/restore/{id}', [EmployeeController::class, 'restoreEmployee']);
         Route::delete('/trash/force-delete-all', [EmployeeController::class, 'forceDeleteAllTrash']); // Xoá vĩnh viễn tất cả quá hạn
@@ -147,6 +148,19 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::get('/system', [LogController::class, 'getSystemLogs'])->middleware('api.permission');
         Route::delete('/system/clear', [LogController::class, 'clearSystemLogs'])->middleware('api.permission');
     });
+
+    // Dedicated catalogue, independent of the legacy Excel salary import.
+    Route::get('/payroll-drafts/{company}/{period}', [\App\Http\Controllers\Api\Admin\PayrollPublicationController::class, 'show']);
+    Route::put('/payroll-drafts/{company}/{period}', [\App\Http\Controllers\Api\Admin\PayrollPublicationController::class, 'save']);
+    Route::post('/payroll-publications/{id}', [\App\Http\Controllers\Api\Admin\PayrollPublicationController::class, 'publish']);
+    Route::get('/vvp-payroll-profiles', [\App\Http\Controllers\Api\Admin\VvpPayrollProfileController::class, 'index']);
+    Route::post('/vvp-payroll-profiles', [\App\Http\Controllers\Api\Admin\VvpPayrollProfileController::class, 'store']);
+    Route::delete('/vvp-payroll-profiles/{employeeCode}', [\App\Http\Controllers\Api\Admin\VvpPayrollProfileController::class, 'destroy']);
+    Route::get('/vvp-payroll-adjustments/{period}', [\App\Http\Controllers\Api\Admin\VvpPayrollAdjustmentController::class, 'index']);
+    Route::put('/vvp-payroll-adjustments/{period}/{employeeId}', [\App\Http\Controllers\Api\Admin\VvpPayrollAdjustmentController::class, 'update']);
+    Route::get('/vvp-payroll-holidays/{period}', [\App\Http\Controllers\Api\Admin\VvpPayrollHolidayController::class, 'show']);
+    Route::put('/vvp-payroll-holidays/{period}', [\App\Http\Controllers\Api\Admin\VvpPayrollHolidayController::class, 'update']);
+    Route::put('/vvp-payroll-profiles/{employeeCode}', [\App\Http\Controllers\Api\Admin\VvpPayrollProfileController::class, 'update']);
 
     Route::middleware(['api.can:view_salary_total'])->prefix('salaries')->group(function () {
         Route::get('/', [SalaryController::class, 'getSalaries']);

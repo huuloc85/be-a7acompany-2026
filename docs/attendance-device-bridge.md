@@ -1,5 +1,29 @@
 # Đồng bộ nhân viên qua máy trung gian LAN
 
+## Xóa hồ sơ thiết bị qua bridge (13/10/2026)
+
+- Trang **Sửa nhân viên → Xóa khỏi máy chấm công**. Nhập lại chính xác mã và xác nhận. Đây là xóa riêng trên thiết bị; không xóa hồ sơ nhân viên hoặc dữ liệu công web, không gọi API xóa lịch sử sự kiện.
+- Xóa hồ sơ thiết bị có thể xóa vân tay/khuôn mặt đăng ký. Khôi phục hồ sơ web không khôi phục sinh trắc học. Chỉ thực hiện khi đã xác nhận với người quản lý; không tự động xóa trên máy khi xóa mềm nhân viên web.
+- DELETE `/api/employees/{id}/attendance-device` dùng cùng quyền quản lý nhân viên, yêu cầu `confirmed=true` và `employee_code` khớp chính xác. Không đồng bộ role 1, 15, 21, 22. API chỉ xếp hàng; GET trả thêm `action=sync|delete` và trạng thái.
+- Bridge kiểm tra mã/tên thiết bị trùng với hồ sơ đã xác nhận, gửi lệnh xóa đúng một mã, đọc lại xác minh vắng mặt. Hồ sơ đã vắng mặt được coi là hoàn tất để có thể thử lại sau mất mạng. Nếu khác tên hoặc phản hồi không rõ ràng, dừng không xóa.
+- Thêm/xóa cùng mã dùng chung hàng đợi; yêu cầu ngược chiều bị trả HTTP 409 khi đang pending/processing. Sau khi xóa hoàn tất có thể bấm đồng bộ thêm lại; vân tay có thể phải lấy lại.
+- Trạng thái DB `delete_pending/delete_processing` không được bridge cũ nhận; FE mới nhận trạng thái chuẩn pending/processing qua API. Phải cập nhật toàn bộ BE/bridge/FE đồng bộ phiên bản, không dùng lẫn API cũ khi đã cho phép xóa.
+
+### Triển khai tính năng xóa
+
+1. Dừng task Windows bằng PowerShell Administrator: `Stop-ScheduledTask -TaskName "A7A-Attendance-Bridge"`. Dừng mọi bridge khác trên cùng DB; tạm không gửi yêu cầu nhân viên.
+2. Cập nhật BE mới trên host và máy bridge (bao gồm sửa `Employee::$incrementing=false`). Trên host chạy riêng migration sau; không chạy migrate:fresh hoặc tất cả migration khác:
+
+```bash
+/opt/plesk/php/8.2/bin/php artisan migrate --path=database/migrations/2026_10_13_000001_add_device_request_action.php --force
+/opt/plesk/php/8.2/bin/php artisan route:cache
+```
+
+3. Deploy FE mới để có nút xóa và phân biệt kết quả thêm/xóa. Sau đó bật Windows task: `Start-ScheduledTask -TaskName "A7A-Attendance-Bridge"`.
+4. Không cần cài lại task hay file BAT. Migration chỉ thêm cột thao tác và tên đã xác nhận, không xóa dữ liệu. Không khôi phục migration này khi còn job hoặc code xóa đang sử dụng.
+
+Code xóa chưa được chạy trên thiết bị thật. Khi triển khai, chỉ xác nhận trên đúng nhân viên thực sự cần xóa, không dùng nhân viên đang làm việc để thử.
+
 Web xác nhận → API host lưu `attendance_device_requests` → máy Mac đọc hàng đợi từ database host → ISAPI máy chấm công → đọc lại quyền → cập nhật trạng thái trên host.
 
 ## Triển khai

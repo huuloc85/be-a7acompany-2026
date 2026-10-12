@@ -10,6 +10,7 @@ use App\Models\SalaryOfficialA7A;
 use App\Models\SalaryOfficialVVP;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class EmpSalaryController extends Controller
@@ -18,6 +19,10 @@ class EmpSalaryController extends Controller
     {
         try {
             $salaries = QueryBuilder::for(SalaryManager::class)
+                ->where('status', 'published')
+                ->where(function ($query) use ($request) {
+                    $query->whereNull('calculator_key')->orWhereIn('id', DB::table('payroll_snapshot_members')->where('employee_id', (string) $request->user()->getAuthIdentifier())->select('salary_id'));
+                })
                 ->select('id', 'title', 'start_date', 'end_date', 'date_show', 'created_at', 'updated_at')
                 ->allowedFilters('title', 'start_date', 'end_date', 'date_show', 'created_at', 'updated_at')
                 ->defaultSort('-id')
@@ -41,6 +46,15 @@ class EmpSalaryController extends Controller
     {
         $user = Auth::user();
         try {
+            $manager = SalaryManager::where('status', 'published')->findOrFail($id);
+            if ($manager->calculator_key) {
+                $snapshot = DB::table('payroll_snapshots')->where('salary_id', $id)->first();
+                $draft = $snapshot ? json_decode($snapshot->draft, true) : null;
+                $row = collect($draft['rows'] ?? [])->first(fn ($row) => (string) $row['profile']['employeeId'] === (string) $user->id);
+                abort_unless($row, 404);
+
+                return response()->json(['payroll_row' => $row, 'salary_manager' => $manager]);
+            }
             $company = strtolower($user->company);
             if ($company === 'a7a') {
                 $salary = SalaryOfficialA7A::query()
