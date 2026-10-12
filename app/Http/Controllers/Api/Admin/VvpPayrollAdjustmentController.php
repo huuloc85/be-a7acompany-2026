@@ -13,7 +13,7 @@ class VvpPayrollAdjustmentController extends Controller
     {
         abort_unless(VvpPayrollProfile::canRead($request->user()), 403);
         abort_unless(preg_match('/^20\d{2}-(0[1-9]|1[0-2])$/D', $period), 422);
-        $rows = DB::table('vvp_payroll_adjustments')->where('period', $period)->get();
+        $rows = DB::table('payroll_adjustments')->where('period', $period)->get();
 
         return response()->json(['data' => $rows->map(fn ($row) => $this->present($row))])
             ->header('Cache-Control', 'private, no-store');
@@ -47,9 +47,9 @@ class VvpPayrollAdjustmentController extends Controller
         }
         $row = DB::transaction(function () use ($request, $period, $employeeId, $data, $values) {
             // Lock the catalogue row to serialize initial creation as well as updates.
-            $profile = DB::table('vvp_payroll_profiles')->where('employee_id', $employeeId)->lockForUpdate()->first();
+            $profile = DB::table('payroll_profiles')->where('employee_id', $employeeId)->lockForUpdate()->first();
             abort_unless($profile, 422, 'Nhân viên chưa có hồ sơ lương liên kết.');
-            $query = DB::table('vvp_payroll_adjustments')->where('period', $period)->where('employee_id', $employeeId);
+            $query = DB::table('payroll_adjustments')->where('period', $period)->where('employee_id', $employeeId);
             $existing = (clone $query)->lockForUpdate()->first();
             abort_if((int) ($existing->revision ?? 0) !== (int) $data['revision'], 409, 'Khoản phát sinh đã được người khác sửa. Hãy tải lại trước khi lưu.');
             $payload = [
@@ -61,7 +61,7 @@ class VvpPayrollAdjustmentController extends Controller
             if ($existing) {
                 $query->update($payload);
             } else {
-                DB::table('vvp_payroll_adjustments')->insert([...$payload, 'period' => $period, 'employee_id' => $employeeId, 'created_at' => now()]);
+                DB::table('payroll_adjustments')->insert([...$payload, 'period' => $period, 'employee_id' => $employeeId, 'created_at' => now()]);
             }
 
             return $query->first();

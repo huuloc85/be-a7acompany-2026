@@ -42,7 +42,7 @@ class VvpPayrollProfileTest extends TestCase
         $this->assertSame([], $controller->index($this->request())->getData(true)['availableEmployees']);
         $controller->destroy($this->request(['revision' => 1]), 'web001');
         $this->assertTrue(DB::table('employees')->where('id', 'web001')->exists());
-        $this->assertFalse(DB::table('vvp_payroll_profiles')->where('employee_code', 'web001')->exists());
+        $this->assertFalse(DB::table('payroll_profiles')->where('employee_code', 'web001')->exists());
     }
 
     public function test_create_rejects_duplicate_and_delete_rejects_stale_revision(): void
@@ -60,7 +60,7 @@ class VvpPayrollProfileTest extends TestCase
                 $this->assertSame(409, $exception->getStatusCode());
             }
         }
-        $this->assertSame(1, DB::table('vvp_payroll_profiles')->count());
+        $this->assertSame(1, DB::table('payroll_profiles')->count());
     }
 
     public function test_read_only_user_cannot_create_or_delete(): void
@@ -107,6 +107,9 @@ class VvpPayrollProfileTest extends TestCase
             'effective_from' => '2026-08-16', 'created_at' => now(), 'updated_at' => now(),
         ]);
         (require database_path('migrations/2026_10_07_000001_link_vvp_payroll_profiles_to_employees.php'))->up();
+        (require database_path('migrations/2026_10_06_000002_create_vvp_payroll_holidays_table.php'))->up();
+        (require database_path('migrations/2026_10_08_000001_create_vvp_payroll_adjustments_table.php'))->up();
+        (require database_path('migrations/2026_10_13_000002_rename_shared_payroll_tables.php'))->up();
     }
 
     private function request(array $payload = [], string $role = 'Admin', bool $permission = false): Request
@@ -149,7 +152,7 @@ class VvpPayrollProfileTest extends TestCase
         $this->assertEquals(0, $row['profile']['basicSalary']);
         $this->assertSame('Current employee name', $row['profile']['name']);
         $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
-        $this->assertSame('test-admin', DB::table('vvp_payroll_profiles')->value('updated_by'));
+        $this->assertSame('test-admin', DB::table('payroll_profiles')->value('updated_by'));
     }
 
     public function test_stale_revision_cannot_overwrite_a_saved_profile(): void
@@ -162,7 +165,7 @@ class VvpPayrollProfileTest extends TestCase
             $this->fail('Expected conflict');
         } catch (HttpException $exception) {
             $this->assertSame(409, $exception->getStatusCode());
-            $this->assertSame(2, DB::table('vvp_payroll_profiles')->value('revision'));
+            $this->assertSame(2, DB::table('payroll_profiles')->value('revision'));
         }
     }
 
@@ -223,7 +226,7 @@ class VvpPayrollProfileTest extends TestCase
 
     public function test_mapping_cannot_claim_another_profiles_web_id(): void
     {
-        DB::table('vvp_payroll_profiles')->insert([
+        DB::table('payroll_profiles')->insert([
             'employee_code' => '002', 'profile' => json_encode([...$this->profile, 'employeeId' => '002', 'attendanceEmployeeId' => 'web001']),
             'revision' => 1, 'source' => 'Test', 'source_row' => 9, 'effective_from' => '2026-08-16',
         ]);
@@ -240,16 +243,16 @@ class VvpPayrollProfileTest extends TestCase
         $row = $controller->index($this->request())->getData(true)['data'][0];
         $this->assertSame('Renamed on employees', $row['profile']['name']);
         $this->assertTrue($row['employeeLinked']);
-        $this->assertSame('Test employee', json_decode(DB::table('vvp_payroll_profiles')->value('profile'), true)['name']);
+        $this->assertSame('Test employee', json_decode(DB::table('payroll_profiles')->value('profile'), true)['name']);
         DB::table('employees')->where('id', '001')->update(['deleted_at' => now()]);
         $this->assertTrue($controller->index($this->request())->getData(true)['data'][0]['employeeInactive']);
     }
 
     public function test_employee_column_is_authoritative_over_old_json_mapping(): void
     {
-        $this->assertSame('001', DB::table('vvp_payroll_profiles')->value('employee_id'));
+        $this->assertSame('001', DB::table('payroll_profiles')->value('employee_id'));
         $profile = [...$this->profile, 'attendanceEmployeeId' => 'web001'];
-        DB::table('vvp_payroll_profiles')->update(['profile' => json_encode($profile)]);
+        DB::table('payroll_profiles')->update(['profile' => json_encode($profile)]);
         $row = (new VvpPayrollProfileController)->index($this->request())->getData(true)['data'][0];
         $this->assertSame('001', $row['profile']['attendanceEmployeeId']);
         $this->assertSame('Current employee name', $row['profile']['name']);
@@ -257,7 +260,7 @@ class VvpPayrollProfileTest extends TestCase
 
     public function test_missing_employee_is_visible_and_invalid_mapping_is_rejected(): void
     {
-        DB::table('vvp_payroll_profiles')->where('employee_code', '001')->update(['employee_id' => null]);
+        DB::table('payroll_profiles')->where('employee_code', '001')->update(['employee_id' => null]);
         DB::table('employees')->where('id', '001')->delete();
         $controller = new VvpPayrollProfileController;
         $row = $controller->index($this->request())->getData(true)['data'][0];

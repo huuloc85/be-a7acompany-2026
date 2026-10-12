@@ -24,21 +24,21 @@ class VvpPayrollProfileController extends Controller
             if (! $employee || $employee->deleted_at !== null || ! in_array(mb_strtolower(trim($employee->company ?? '')), ['vvp', 'vinh vinh phát', 'a7a'], true)) {
                 throw ValidationException::withMessages(['profile.attendanceEmployeeId' => ['Không tìm thấy nhân viên VVP/A7A theo mã web.']]);
             }
-            abort_if(DB::table('vvp_payroll_profiles')->where('employee_code', $employeeCode)->exists(), 409, 'Mã nhân viên đã có trong danh mục.');
-            abort_if(DB::table('vvp_payroll_profiles')->where('employee_id', $target)->exists(), 409, 'Nhân viên web đã được liên kết trong danh mục.');
+            abort_if(DB::table('payroll_profiles')->where('employee_code', $employeeCode)->exists(), 409, 'Mã nhân viên đã có trong danh mục.');
+            abort_if(DB::table('payroll_profiles')->where('employee_id', $target)->exists(), 409, 'Nhân viên web đã được liên kết trong danh mục.');
             $profile['name'] = $employee->name;
-            DB::table('vvp_payroll_profiles')->insert([
+            DB::table('payroll_profiles')->insert([
                 'employee_code' => $employeeCode,
                 'employee_id' => $target,
                 'profile' => json_encode($profile, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
                 'revision' => 1,
                 'source' => 'Web catalogue',
-                'source_row' => ((int) DB::table('vvp_payroll_profiles')->max('source_row')) + 1,
+                'source_row' => ((int) DB::table('payroll_profiles')->max('source_row')) + 1,
                 'effective_from' => $validated['effectiveFrom'],
                 'updated_by' => (string) $request->user()->getAuthIdentifier(),
                 'created_at' => now(), 'updated_at' => now(),
             ]);
-            $saved = DB::table('vvp_payroll_profiles')->where('employee_code', $employeeCode)->first();
+            $saved = DB::table('payroll_profiles')->where('employee_code', $employeeCode)->first();
 
             return response()->json(['data' => $this->present($saved, $employee)], 201);
         });
@@ -49,10 +49,10 @@ class VvpPayrollProfileController extends Controller
         abort_unless(VvpPayrollProfile::canEdit($request->user()), 403);
         $validated = $request->validate(['revision' => 'required|integer|min:1']);
         DB::transaction(function () use ($employeeCode, $validated) {
-            $row = DB::table('vvp_payroll_profiles')->where('employee_code', $employeeCode)->lockForUpdate()->first();
+            $row = DB::table('payroll_profiles')->where('employee_code', $employeeCode)->lockForUpdate()->first();
             abort_unless($row, 404);
             abort_if((int) $row->revision !== (int) $validated['revision'], 409, 'Danh mục đã thay đổi. Vui lòng tải lại trước khi xoá.');
-            DB::table('vvp_payroll_profiles')->where('employee_code', $employeeCode)->delete();
+            DB::table('payroll_profiles')->where('employee_code', $employeeCode)->delete();
         });
 
         return response()->json(['data' => ['employeeCode' => $employeeCode]]);
@@ -61,7 +61,7 @@ class VvpPayrollProfileController extends Controller
     public function index(Request $request)
     {
         abort_unless(VvpPayrollProfile::canRead($request->user()), 403);
-        $rows = DB::table('vvp_payroll_profiles')->orderBy('source_row')->get();
+        $rows = DB::table('payroll_profiles')->orderBy('source_row')->get();
         $codes = $rows->pluck('employee_id')->filter();
         $employees = DB::table('employees')->whereIn('id', $codes)->get(['id', 'name', 'company', 'deleted_at'])->keyBy('id');
 
@@ -90,7 +90,7 @@ class VvpPayrollProfileController extends Controller
 
         $row = DB::transaction(function () use ($employeeCode, $validated, $profile, $request) {
             // Lock in a consistent order so simultaneous mappings cannot claim the same web ID.
-            $rows = DB::table('vvp_payroll_profiles')->orderBy('employee_code')->lockForUpdate()->get();
+            $rows = DB::table('payroll_profiles')->orderBy('employee_code')->lockForUpdate()->get();
             $row = $rows->firstWhere('employee_code', $employeeCode);
             abort_unless($row, 404);
             abort_if((int) $row->revision !== (int) $validated['revision'], 409, 'Danh mục đã được người khác sửa. Vui lòng tải lại trước khi lưu.');
@@ -115,7 +115,7 @@ class VvpPayrollProfileController extends Controller
                     throw ValidationException::withMessages(['profile.attendanceEmployeeId' => ['Mã chấm công đã liên kết với hồ sơ lương khác.']]);
                 }
             }
-            DB::table('vvp_payroll_profiles')->where('employee_code', $employeeCode)->update([
+            DB::table('payroll_profiles')->where('employee_code', $employeeCode)->update([
                 'employee_id' => $target,
                 'profile' => json_encode($profile, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
                 'revision' => $row->revision + 1,
@@ -123,7 +123,7 @@ class VvpPayrollProfileController extends Controller
                 'updated_at' => now(),
             ]);
 
-            return DB::table('vvp_payroll_profiles')->where('employee_code', $employeeCode)->first();
+            return DB::table('payroll_profiles')->where('employee_code', $employeeCode)->first();
         });
 
         $employee = DB::table('employees')->where('id', $row->employee_id)->first(['id', 'name', 'company', 'deleted_at']);

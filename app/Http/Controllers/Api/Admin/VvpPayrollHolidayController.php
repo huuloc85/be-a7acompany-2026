@@ -15,7 +15,7 @@ class VvpPayrollHolidayController extends Controller
         abort_unless(VvpPayrollProfile::canRead($request->user()), 403);
         abort_unless(preg_match('/^20\d{2}-(0[1-9]|1[0-2])$/D', $period), 422);
 
-        return $this->respond(DB::table('vvp_payroll_holidays')->where('period', $period)->first());
+        return $this->respond(DB::table('payroll_holidays')->where('period', $period)->first());
     }
 
     public function update(Request $request, string $period)
@@ -30,14 +30,14 @@ class VvpPayrollHolidayController extends Controller
         ]);
         $row = DB::transaction(function () use ($data, $request, $period) {
             // Same ordered catalogue lock as profile updates; serializes first-period creation too.
-            $employees = DB::table('vvp_payroll_profiles')->orderBy('employee_code')->lockForUpdate()->pluck('employee_code')->map(fn ($id) => (string) $id)->all();
+            $employees = DB::table('payroll_profiles')->orderBy('employee_code')->lockForUpdate()->pluck('employee_code')->map(fn ($id) => (string) $id)->all();
             abort_unless(count($employees), 422, 'Chưa có danh mục nhân viên.');
             foreach ($data['overrides'] as $id => $days) {
                 if (! in_array((string) $id, $employees, true)) {
                     throw ValidationException::withMessages(['overrides' => ['Mã nhân viên không có trong danh mục.']]);
                 }
             }
-            $row = DB::table('vvp_payroll_holidays')->where('period', $period)->lockForUpdate()->first();
+            $row = DB::table('payroll_holidays')->where('period', $period)->lockForUpdate()->first();
             abort_if((int) ($row->revision ?? 0) !== (int) $data['revision'], 409, 'Công lễ đã được người khác sửa. Hãy tải lại trước khi lưu.');
             $values = [
                 'default_days' => $data['defaultDays'],
@@ -47,12 +47,12 @@ class VvpPayrollHolidayController extends Controller
                 'updated_at' => now(),
             ];
             if ($row) {
-                DB::table('vvp_payroll_holidays')->where('period', $period)->update($values);
+                DB::table('payroll_holidays')->where('period', $period)->update($values);
             } else {
-                DB::table('vvp_payroll_holidays')->insert([...$values, 'period' => $period, 'created_at' => now()]);
+                DB::table('payroll_holidays')->insert([...$values, 'period' => $period, 'created_at' => now()]);
             }
 
-            return DB::table('vvp_payroll_holidays')->where('period', $period)->first();
+            return DB::table('payroll_holidays')->where('period', $period)->first();
         });
 
         return $this->respond($row);

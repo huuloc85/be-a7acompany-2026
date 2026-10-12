@@ -18,14 +18,15 @@ class VvpPayrollAdjustmentTest extends TestCase
         DB::purge('sqlite');
         DB::statement('PRAGMA foreign_keys = ON');
         Schema::create('employees', fn ($t) => $t->string('id')->primary());
-        Schema::create('vvp_payroll_profiles', function ($t) {
+        Schema::create('payroll_profiles', function ($t) {
             $t->string('employee_id')->primary();
         });
         foreach (['001', '002'] as $id) {
             DB::table('employees')->insert(['id' => $id]);
-            DB::table('vvp_payroll_profiles')->insert(['employee_id' => $id]);
+            DB::table('payroll_profiles')->insert(['employee_id' => $id]);
         }
         (require database_path('migrations/2026_10_08_000001_create_vvp_payroll_adjustments_table.php'))->up();
+        Schema::rename('vvp_payroll_adjustments', 'payroll_adjustments');
     }
 
     private function input(array $adjustment = [], int $revision = 0, string $role = 'Admin'): Request

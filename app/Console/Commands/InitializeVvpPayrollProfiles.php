@@ -47,12 +47,12 @@ class InitializeVvpPayrollProfiles extends Command
             return self::SUCCESS;
         }
         // Never reset edits or replace an existing catalogue on re-deployment.
-        if (DB::table('vvp_payroll_profiles')->exists()) {
+        if (DB::table('payroll_profiles')->exists()) {
             $this->error('Catalogue already exists. Refusing to overwrite it.');
 
             return self::FAILURE;
         }
-        DB::transaction(fn () => DB::table('vvp_payroll_profiles')->insert($rows));
+        DB::transaction(fn () => DB::table('payroll_profiles')->insert($rows));
         $this->info('Created 50 VVP profiles. Existing salary and employee records were not modified.');
 
         return self::SUCCESS;
