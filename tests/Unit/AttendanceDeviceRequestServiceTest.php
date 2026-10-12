@@ -28,6 +28,7 @@ class AttendanceDeviceRequestServiceTest extends TestCase
         $migration = require __DIR__.'/../../database/migrations/2026_09_30_000001_create_attendance_device_requests_table.php';
         $migration->up();
         (require __DIR__.'/../../database/migrations/2026_10_13_000001_add_device_request_action.php')->up();
+        (require __DIR__.'/../../database/migrations/2026_10_13_000002_add_device_request_purge_flag.php')->up();
         $this->queue = new AttendanceDeviceRequestService;
         Carbon::setTestNow('2026-09-30 08:00:00');
     }
@@ -40,6 +41,24 @@ class AttendanceDeviceRequestServiceTest extends TestCase
         Facade::setFacadeApplication(null);
         Container::setInstance(null);
         parent::tearDown();
+    }
+
+    public function test_new_sync_clears_old_purge_authorization(): void
+    {
+        $job = $this->queue->enqueue('00123', 'admin', 'delete', 'Example');
+        DB::table('attendance_device_requests')->where('id', $job->id)->update(['delete_after_purge' => true]);
+        self::assertTrue((bool) $this->queue->claim()->delete_after_purge);
+        $claimed = DB::table('attendance_device_requests')->first();
+        $this->queue->finish($claimed);
+        self::assertFalse((bool) $this->queue->enqueue('00123', 'admin')->delete_after_purge);
+    }
+
+    public function test_purge_queue_rolls_back_with_outer_transaction(): void
+    {
+        DB::beginTransaction();
+        $this->queue->enqueue('00123', 'admin', 'delete', 'Example');
+        DB::rollBack();
+        self::assertSame(0, DB::table('attendance_device_requests')->count());
     }
 
     public function test_duplicate_confirm_does_not_duplicate_or_interrupt_work(): void

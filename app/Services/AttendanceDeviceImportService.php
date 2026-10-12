@@ -10,12 +10,18 @@ use Illuminate\Support\Str;
 
 class AttendanceDeviceImportService
 {
-    public function run(object $job, AttendanceImportQueue $queue, AttendanceEventWriter $writer): void
+    public function run(object $job, AttendanceImportQueue $queue, AttendanceEventWriter $writer, ?callable $betweenPages = null): void
     {
         $start = CarbonImmutable::parse($job->start_date, 'Asia/Ho_Chi_Minh')->addDays($job->completed_days);
         $end = CarbonImmutable::parse($job->end_date, 'Asia/Ho_Chi_Minh');
         for ($day = $start; $day->lte($end); $day = $day->addDay()) {
-            $events = $this->fetchDay($day, fn () => $queue->heartbeat($job));
+            $events = $this->fetchDay($day, function () use ($queue, $job, $betweenPages) {
+                $queue->heartbeat($job);
+                if ($betweenPages) {
+                    $betweenPages();
+                    $queue->heartbeat($job);
+                }
+            });
             // One day's rows, counts and checkpoint commit together. A stale worker cannot write.
             DB::transaction(function () use ($job, $day, $end, $events, $writer) {
                 $row = DB::table('attendance_import_requests')->where('id', $job->id)
@@ -61,6 +67,10 @@ class AttendanceDeviceImportService
                     'claim_token' => $day->equalTo($end) ? null : $job->claim_token,
                 ]);
             }, 3);
+            if ($betweenPages) {
+                // Never execute device profile operations while attendance rows are locked.
+                $betweenPages();
+            }
         }
     }
 

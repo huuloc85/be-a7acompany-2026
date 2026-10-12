@@ -29,6 +29,7 @@ class AttendanceDeviceRequestService
             if (! $active && ($row->status === 'failed' || $row->action !== $action)) {
                 DB::table('attendance_device_requests')->where('id', $row->id)->update([
                     'status' => $pending, 'action' => $action, 'employee_name' => $employeeName,
+                    'delete_after_purge' => false,
                     'requested_by' => $requestedBy, 'error' => null,
                     'claim_token' => null, 'claimed_at' => null, 'completed_at' => null, 'updated_at' => now(),
                 ]);

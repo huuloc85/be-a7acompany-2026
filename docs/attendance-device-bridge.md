@@ -1,6 +1,28 @@
 # Đồng bộ nhân viên qua máy trung gian LAN
 
+## Tạo nhân viên không xác nhận lần hai và giảm thời gian chờ
+
+- API tạo nhân viên tự xếp yêu cầu thêm/cấp quyền trong cùng transaction với hồ sơ (trừ role 1, 15, 21, 22). API không gọi ISAPI và không chờ thiết bị. Nếu không lưu được hàng đợi, hồ sơ không được commit; cần sửa lỗi rồi gửi lại.
+- Trang thêm nhân viên hiển thị trạng thái ngay trên trang, không tự mở modal xác nhận nữa. Yêu cầu đã lưu trên host vẫn được bridge xử lý khi người dùng đóng trang. Nút đồng bộ thủ công vẫn dùng cho thử lại; thao tác xóa vẫn phải nhập mã và xác nhận.
+- Sau khi gửi thành công một yêu cầu thủ công, modal đóng và UI theo dõi trong nền khi trang còn mở. “Đã gửi” không phải “đã hoàn tất”. Web chỉ báo hoàn tất khi bridge xác minh thiết bị.
+- Windows runner nghỉ 3 giây giữa các lượt thành công, 15 giây khi command bị lỗi. Lịch tự lấy hôm qua+hôm nay vẫn là 5 phút, không thay đổi.
+- Khi đọc lịch sử, bridge kiểm tra yêu cầu hồ sơ giữa các trang ISAPI (giãn ít nhất 3 giây) và sau transaction từng ngày. Mỗi lần xử lý tối đa một yêu cầu hồ sơ, không gọi thiết bị song song hoặc giữa transaction lưu công. Nhờ vậy hồ sơ không phải chờ hết toàn bộ khoảng ngày. Đang chờ HTTP hoặc transaction lưu một ngày thì vẫn phải chờ bước đó xong; không cam kết đồng bộ xong trong 3 giây.
+- Cập nhật **BE host + BE Windows + FE**. Không có migration mới cho tối ưu này; vẫn cần migration action của tính năng xóa đã triển khai trước đó. Không cần cài lại task.
+- Trên PowerShell Administrator, dừng task **trước khi cập nhật code** rồi bật sau khi cập nhật xong để runner nạp thời gian nghỉ mới:
+
+```powershell
+Stop-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+# Cap nhat code BE tai may cong ty, sau do:
+Start-ScheduledTask -TaskName "A7A-Attendance-Bridge"
+```
+
+- Nếu dừng giữa lúc xử lý một yêu cầu, lease có thể cần 5 phút để phục hồi; không tạo nhiều worker để né thời gian chờ này. File BAT chỉ bật task đang có, không thay thế bước restart khi cập nhật runner.
+
 ## Xóa hồ sơ thiết bị qua bridge (13/10/2026)
+
+- **Thùng rác:** xóa mềm không tác động thiết bị. Xóa vĩnh viễn từng người hoặc toàn bộ sẽ lưu mã/tên và `delete_after_purge` cùng giao dịch xóa web. Nếu không lưu được lệnh hoặc đang có lệnh ngược chiều, giao dịch được hoàn tác. Role 1, 15, 21, 22 không được gửi lệnh thiết bị.
+- Bridge dùng bản chụp mã/tên khi hồ sơ đã bị xóa vĩnh viễn; nếu mã xuất hiện lại trên web thì từ chối xóa. Vẫn đối chiếu chính xác mã/tên trên thiết bị trước khi xóa vân tay và hồ sơ. Không gọi API xóa lịch sử chấm công.
+- Hồ sơ đã xóa vĩnh viễn **trước bản cập nhật này** không tự có lệnh mới: cần xác minh riêng mã/tên, không đoán danh sách để xóa. Kết quả yêu cầu còn trong `attendance_device_requests` (status/error), dù hồ sơ web không còn. Lỗi cần IT kiểm tra; không tự báo đã xóa thiết bị khi mới xếp hàng.
 
 - Trang **Sửa nhân viên → Xóa khỏi máy chấm công**. Nhập lại chính xác mã và xác nhận. Đây là xóa riêng trên thiết bị; không xóa hồ sơ nhân viên hoặc dữ liệu công web, không gọi API xóa lịch sử sự kiện.
 - Xóa hồ sơ thiết bị có thể xóa vân tay/khuôn mặt đăng ký. Khôi phục hồ sơ web không khôi phục sinh trắc học. Chỉ thực hiện khi đã xác nhận với người quản lý; không tự động xóa trên máy khi xóa mềm nhân viên web.
@@ -16,6 +38,7 @@
 
 ```bash
 /opt/plesk/php/8.2/bin/php artisan migrate --path=database/migrations/2026_10_13_000001_add_device_request_action.php --force
+/opt/plesk/php/8.2/bin/php artisan migrate --path=database/migrations/2026_10_13_000002_add_device_request_purge_flag.php --force
 /opt/plesk/php/8.2/bin/php artisan route:cache
 ```
 
@@ -85,7 +108,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-attend
 
 Bộ cài tạo và khởi động task `A7A-Attendance-Bridge`: chạy lúc Windows khởi động, không cần đăng nhập. Task chạy với tài khoản SYSTEM; chỉ cho người quản trị tin cậy sửa thư mục BE, các script và `.env`. Task dùng đường dẫn PHP tuyệt đối, không dựa vào PATH của SYSTEM. Không tự sửa firewall, quyền database hoặc chế độ ngủ. Nếu task đã có, bộ cài dừng mà không ghi đè.
 
-Runner kiểm tra hàng đợi 15 giây sau mỗi lượt, xử lý tuần tự và ghi log theo ngày tại `storage/logs/attendance-bridge-YYYY-MM-DD.log`. Task tự khởi động lại sau 1 phút nếu runner bị thoát lỗi. Máy phải đang bật/không ngủ; tắt Sleep khi cắm điện trong Windows Settings nếu cần chạy liên tục. Khi chỉ khóa màn hình, task vẫn chạy.
+Runner kiểm tra hàng đợi 3 giây sau mỗi lượt thành công (15 giây khi lỗi), xử lý tuần tự và ghi log theo ngày tại `storage/logs/attendance-bridge-YYYY-MM-DD.log`. Task tự khởi động lại sau 1 phút nếu runner bị thoát lỗi. Máy phải đang bật/không ngủ; tắt Sleep khi cắm điện trong Windows Settings nếu cần chạy liên tục. Khi chỉ khóa màn hình, task vẫn chạy.
 
 ### Quản lý task (PowerShell Administrator)
 

@@ -15,7 +15,7 @@ use Illuminate\Http\Client\ConnectionException;
 class AttendanceDeviceBridge extends Command
 {
     protected $signature = 'attendance:device-bridge
-        {--once : Xử lý tối đa một yêu cầu hồ sơ và một yêu cầu lấy công}
+        {--once : Một lượt lấy công, có ưu tiên yêu cầu hồ sơ giữa các trang lịch sử}
         {--auto-import : Tự xếp lịch lấy công hôm qua và hôm nay mỗi 5 phút}';
 
     protected $description = 'Chạy trong LAN: lấy yêu cầu từ database host và đồng bộ máy chấm công';
@@ -27,41 +27,13 @@ class AttendanceDeviceBridge extends Command
 
             return self::FAILURE;
         }
-        // launchd runs one process at a time; the DB claim also protects against another worker.
         $limit = $this->option('once') ? 1 : 5;
         for ($i = 0; $i < $limit; $i++) {
-            $job = $queue->claim();
-            if (! $job) {
+            if (! $this->processEmployeeRequest($queue, $device)) {
                 break;
             }
-            try {
-                $deleting = ($job->action ?? 'sync') === 'delete';
-                $employee = $deleting ? Employee::withTrashed()->find($job->employee_id) : Employee::find($job->employee_id);
-                if (! $employee || in_array((int) $employee->role_id, [1, 15, 21, 22], true)) {
-                    $queue->finish($job, 'Nhân viên đã xóa hoặc thuộc nhóm không đồng bộ.');
-
-                    continue;
-                }
-                if ($deleting) {
-                    if (! $job->employee_name || $job->employee_name !== $employee->name) {
-                        $queue->finish($job, 'Tên hồ sơ đã thay đổi. Kiểm tra nhân viên rồi xác nhận xóa lại.');
-
-                        continue;
-                    }
-                    app(\App\Services\AttendanceDeviceDeleteService::class)->delete((string) $employee->id, $job->employee_name);
-                } else {
-                    $device->sync((string) $employee->id, $employee->name);
-                }
-                $queue->finish($job);
-                $this->info('Đã xác minh đồng bộ yêu cầu '.$job->id);
-            } catch (ConnectionException $e) {
-                $queue->finish($job, 'Máy trung gian không kết nối được máy chấm công. Kiểm tra LAN rồi bấm Thử lại.');
-            } catch (\RuntimeException $e) {
-                $queue->finish($job, $e->getMessage());
-            } catch (\Throwable $e) {
-                $queue->finish($job, 'Đồng bộ lỗi. Vui lòng liên hệ IT và thử lại.');
-            }
         }
+        $lastProfileCheck = microtime(true);
 
         // Keep employee provisioning responsive, then process at most one history request.
         // During rollout the host migration may not be present yet.
@@ -73,7 +45,17 @@ class AttendanceDeviceBridge extends Command
             $job = $imports->claim();
             if ($job) {
                 try {
-                    app(AttendanceDeviceImportService::class)->run($job, $imports, app(AttendanceEventWriter::class));
+                    app(AttendanceDeviceImportService::class)->run(
+                        $job, $imports, app(AttendanceEventWriter::class),
+                        function () use ($queue, $device, &$lastProfileCheck): void {
+                            if (microtime(true) - $lastProfileCheck < 3) {
+                                return;
+                            }
+                            // One profile at a time, outside the attendance transaction and HTTP call.
+                            $this->processEmployeeRequest($queue, $device);
+                            $lastProfileCheck = microtime(true);
+                        }
+                    );
                     $this->info('Đã hoàn tất yêu cầu lấy công '.$job->id);
                 } catch (ConnectionException $e) {
                     $imports->fail($job, 'Không kết nối được máy chấm công. Kiểm tra máy bridge và mạng LAN rồi thử lại. Các ngày đã nhập vẫn được giữ.');
@@ -90,5 +72,48 @@ class AttendanceDeviceBridge extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function processEmployeeRequest(AttendanceDeviceRequestService $queue, AttendanceDeviceEmployeeService $device): bool
+    {
+        $job = $queue->claim();
+        if (! $job) {
+            return false;
+        }
+        try {
+            $deleting = ($job->action ?? 'sync') === 'delete';
+            $employee = $deleting ? Employee::withTrashed()->find($job->employee_id) : Employee::find($job->employee_id);
+            $purged = $deleting && ($job->delete_after_purge ?? false);
+            if ($purged && $employee) {
+                $queue->finish($job, 'Mã nhân viên đã tồn tại lại trên web. Không xóa để tránh nhầm hồ sơ.');
+
+                return true;
+            }
+            if ((! $employee && ! $purged) || ($employee && in_array((int) $employee->role_id, [1, 15, 21, 22], true))) {
+                $queue->finish($job, 'Nhân viên đã xóa hoặc thuộc nhóm không đồng bộ.');
+
+                return true;
+            }
+            if ($deleting) {
+                if (! $job->employee_name || ($employee && $job->employee_name !== $employee->name)) {
+                    $queue->finish($job, 'Tên hồ sơ đã thay đổi. Kiểm tra nhân viên rồi xác nhận xóa lại.');
+
+                    return true;
+                }
+                app(\App\Services\AttendanceDeviceDeleteService::class)->delete((string) $job->employee_id, $job->employee_name);
+            } else {
+                $device->sync((string) $employee->id, $employee->name);
+            }
+            $queue->finish($job);
+            $this->info('Đã xác minh đồng bộ yêu cầu '.$job->id);
+        } catch (ConnectionException $e) {
+            $queue->finish($job, 'Máy trung gian không kết nối được máy chấm công. Kiểm tra LAN rồi bấm Thử lại.');
+        } catch (\RuntimeException $e) {
+            $queue->finish($job, $e->getMessage());
+        } catch (\Throwable $e) {
+            $queue->finish($job, 'Đồng bộ lỗi. Vui lòng liên hệ IT và thử lại.');
+        }
+
+        return true;
     }
 }

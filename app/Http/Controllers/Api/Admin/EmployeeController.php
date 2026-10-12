@@ -215,11 +215,25 @@ class EmployeeController extends BaseController
                 'password' => bcrypt($validated['id']),
             ]);
 
+            // Persist the employee and its bridge request together; no device HTTP in this API.
+            $deviceSync = null;
+            if (! in_array((int) $employee->role_id, [1, 15, 21, 22], true)) {
+                $job = app(\App\Services\AttendanceDeviceRequestService::class)->enqueue(
+                    (string) $employee->id,
+                    (string) $request->user()->getAuthIdentifier()
+                );
+                $deviceSync = [
+                    'action' => 'sync', 'status' => $job->status,
+                    'message' => 'Đã lưu nhân viên và yêu cầu đồng bộ. Bridge sẽ thêm hồ sơ và cấp quyền trong nền.',
+                ];
+            }
+
             DB::commit();
 
             return response()->json([
                 'message' => 'Employee created successfully!',
                 'data' => $employee,
+                'attendance_device' => $deviceSync,
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -428,11 +442,14 @@ class EmployeeController extends BaseController
     // Xoá vĩnh viễn nhân viên trong thùng rác
     public function forceDeleteEmployee($id)
     {
+        DB::beginTransaction();
         try {
-            $employee = Employee::onlyTrashed()->findOrFail($id);
+            $employee = Employee::onlyTrashed()->lockForUpdate()->findOrFail($id);
 
             // Bảo vệ Super Admin & Giám đốc
             if (in_array($employee->role_id, [1, 21])) {
+                DB::rollBack();
+
                 return response()->json([
                     'message' => 'Không thể xoá vĩnh viễn tài khoản này.',
                 ], 403);
@@ -443,6 +460,8 @@ class EmployeeController extends BaseController
                 'name' => $employee->name,
             ];
 
+            $deviceQueued = $this->queueDeviceDeletionBeforePurge($employee);
+
             // Tắt FK check, xoá, bật lại
             DB::statement('SET FOREIGN_KEY_CHECKS=0');
             try {
@@ -452,13 +471,20 @@ class EmployeeController extends BaseController
                 DB::statement('SET FOREIGN_KEY_CHECKS=1');
             }
 
+            DB::commit();
+
             Log::info('Employee force deleted', $deletedInfo);
 
             return response()->json([
-                'message' => "Đã xoá vĩnh viễn nhân viên: {$deletedInfo['name']} ({$deletedInfo['id']})",
+                'message' => "Đã xoá vĩnh viễn nhân viên: {$deletedInfo['name']} ({$deletedInfo['id']})".($deviceQueued ? '. Đã lưu yêu cầu xóa trên máy chấm công; bridge sẽ xử lý trong nền.' : ''),
             ]);
         } catch (\Throwable $e) {
+            DB::rollBack();
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\ConflictHttpException) {
+                return response()->json(['message' => $e->getMessage()], 409);
+            }
 
             return HandleError::handle($e);
         }
@@ -469,15 +495,19 @@ class EmployeeController extends BaseController
     {
         $days = (int) $request->input('days', 0); // Mặc định xoá tất cả
 
+        DB::beginTransaction();
         try {
             $cutoffDate = now()->subDays($days);
 
             $trashedEmployees = Employee::onlyTrashed()
                 ->where('deleted_at', '<=', $cutoffDate)
                 ->whereNotIn('role_id', [1, 21]) // Bảo vệ Super Admin & Giám đốc
+                ->lockForUpdate()
                 ->get();
 
             if ($trashedEmployees->isEmpty()) {
+                DB::commit();
+
                 return response()->json([
                     'message' => $days > 0
                         ? "Không có nhân viên nào trong thùng rác quá {$days} ngày."
@@ -487,10 +517,14 @@ class EmployeeController extends BaseController
             }
 
             $deletedCount = 0;
+            $deviceCount = 0;
 
             DB::statement('SET FOREIGN_KEY_CHECKS=0');
             try {
                 foreach ($trashedEmployees as $employee) {
+                    if ($this->queueDeviceDeletionBeforePurge($employee)) {
+                        $deviceCount++;
+                    }
                     $employee->tokens()->delete();
                     $employee->forceDelete();
                     $deletedCount++;
@@ -504,15 +538,42 @@ class EmployeeController extends BaseController
                 DB::statement('SET FOREIGN_KEY_CHECKS=1');
             }
 
+            DB::commit();
+
             return response()->json([
-                'message' => "Đã xoá vĩnh viễn {$deletedCount} nhân viên trong thùng rác.",
+                'message' => "Đã xoá vĩnh viễn {$deletedCount} nhân viên trong thùng rác. Đã lưu {$deviceCount} yêu cầu xóa trên máy chấm công để bridge xử lý trong nền.",
                 'deleted_count' => $deletedCount,
             ]);
         } catch (\Throwable $e) {
+            DB::rollBack();
             DB::statement('SET FOREIGN_KEY_CHECKS=1');
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\ConflictHttpException) {
+                return response()->json(['message' => $e->getMessage()], 409);
+            }
 
             return HandleError::handle($e);
         }
+    }
+
+    private function queueDeviceDeletionBeforePurge(Employee $employee): bool
+    {
+        if (in_array((int) $employee->role_id, [1, 15, 21, 22], true)) {
+            return false;
+        }
+
+        $job = app(\App\Services\AttendanceDeviceRequestService::class)->enqueue(
+            (string) $employee->id, (string) auth()->id(), 'delete', $employee->name
+        );
+        if ($job->status === 'delete_processing') {
+            throw new \Symfony\Component\HttpKernel\Exception\ConflictHttpException('Bridge đang xóa hồ sơ này. Chờ hoàn tất rồi xóa vĩnh viễn lại.');
+        }
+        DB::table('attendance_device_requests')->where('id', $job->id)->update([
+            'delete_after_purge' => true,
+            'employee_name' => $employee->name,
+        ]);
+
+        return true;
     }
 
     // Show Calander For Employee
