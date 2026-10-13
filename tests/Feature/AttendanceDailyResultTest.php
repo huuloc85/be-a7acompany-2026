@@ -50,6 +50,7 @@ class AttendanceDailyResultTest extends TestCase
             $table->dateTime('datetime');
         });
         (require database_path('migrations/2026_10_13_000001_create_attendance_daily_results_table.php'))->up();
+        (require database_path('migrations/2025_10_09_000000_create_request_forms_table.php'))->up();
         DB::table('calendar_categories')->insert(['id' => '1', 'name' => 'Production']);
         foreach (['001', '002'] as $id) {
             DB::table('employees')->insert([
@@ -164,6 +165,38 @@ class AttendanceDailyResultTest extends TestCase
         $response = (new AttendanceHistoryController)->detail($request);
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame(0, DB::table('attendance_daily_results')->count());
+    }
+
+    public function test_live_employee_and_archived_views_use_current_overtime_approval(): void
+    {
+        $form = \App\Models\RequestForm::create([
+            'employee_id' => '001', 'type' => 'don_xin_tang_ca',
+            'title' => 'Đơn xin tăng ca', 'content' => 'Tăng ca',
+            'form_data' => ['ngay_ap_dung' => '2026-10-01', 'ca_lam' => 1, 'ly_do' => 'Công việc'],
+            'status' => 'pending', 'submitted_at' => now(),
+        ]);
+        $pending = collect($this->calculate()['data'])->first(fn ($row) => $row['employee_id'] === '001' && $row['date'] === '2026-10-01');
+        $this->assertEquals(0.5, $pending['overtime_approval']['unapproved_hours']);
+        $this->assertSame('pending', $pending['overtime_approval']['requests'][0]['status']);
+
+        $form->update(['status' => 'approved']);
+        \Illuminate\Support\Facades\Auth::shouldReceive('user')->andReturn((object) ['id' => '001']);
+        // Explicit sort avoids the legacy unqualified date sort on SQLite joins.
+        $request = $this->request(['include_calculation' => 1, 'limit' => 0, 'sort' => 'employee_id', 'filter' => ['date_between' => '2026-10-01,2026-10-02']]);
+        $employeeResponse = (new \App\Http\Controllers\Api\Employee\EmpAttendanceController)->index($request);
+        $this->assertSame(200, $employeeResponse->getStatusCode(), $employeeResponse->getContent());
+        $employeeRow = collect($employeeResponse->getData(true)['data'])->firstWhere('date', '2026-10-01');
+        $this->assertSame('001', $employeeRow['employee_id']);
+        $this->assertEquals(0.5, $employeeRow['overtime_approval']['approved_hours']);
+
+        // No recalculation needed after approval, even if raw punches were archived.
+        DB::table('attendance_records')->delete();
+        $request = $this->request(['filter' => ['employees.name' => '001']]);
+        $response = (new AttendanceDailyResultController)->index($request, new AttendanceDailyResultStore)->getData(true);
+        $saved = collect($response['data'])->firstWhere('date', '2026-10-01');
+        $this->assertEquals(0.5, $saved['overtime_hours']);
+        $this->assertEquals(0.5, $saved['overtime_approval']['approved_hours']);
+        $this->assertEquals(0, $saved['overtime_approval']['unapproved_hours']);
     }
 
     private function calculate(array $params = []): array

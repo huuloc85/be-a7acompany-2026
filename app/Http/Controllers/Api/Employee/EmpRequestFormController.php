@@ -333,6 +333,15 @@ class EmpRequestFormController extends Controller
         }
 
         // Kiểm tra đã có chữ ký supervisor chưa
+        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
+            if ((string) $requestForm->employee_id === (string) $currentUserId || ! $requestForm->digital_signature_applicant) {
+                return response()->json(['success' => false, 'message' => 'Đơn tăng ca cần chữ ký người làm đơn và tổ trưởng khác người làm đơn.'], 422);
+            }
+            if ($requestForm->digital_signature_supervisor && $requestForm->finalizeApproval()) {
+                return response()->json(['success' => true, 'message' => 'Đơn tăng ca đã được duyệt.', 'data' => $requestForm]);
+            }
+        }
+
         if (! empty($requestForm->digital_signature_supervisor)) {
             return response()->json([
                 'success' => false,
@@ -384,13 +393,14 @@ class EmpRequestFormController extends Controller
 
             $requestForm->update($updateData);
             $requestForm->refresh();
+            $completed = $requestForm->finalizeApproval();
             $requestForm->load(['employee', 'supervisor', 'supervisorApprovedBy']);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Đã ký duyệt đơn thành công. Đơn sẽ được chuyển cho quản lý nhà máy duyệt tiếp.',
+                'message' => $completed ? 'Đơn yêu cầu đã được duyệt thành công.' : 'Đã ký tổ trưởng. Đơn đang chờ quản lý duyệt.',
                 'data' => $requestForm,
             ]);
         } catch (\Exception $e) {
@@ -504,6 +514,14 @@ class EmpRequestFormController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        if ($request->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
+            $request->validate(\App\Services\OvertimeApprovalService::rules());
+            $request->validate([
+                'supervisor_id' => ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()],
+                'digital_signature_applicant' => ['required'],
+            ]);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -640,15 +658,17 @@ class EmpRequestFormController extends Controller
                 ];
 
                 // Dispatch job để gửi email cho quản lý nhà máy với URL riêng
-                SendRequestFormNotificationJob::dispatch($requestForm, $factoryManager, $approvalUrlManager);
+                if ($requestForm->type !== RequestForm::TYPE_DON_XIN_TANG_CA) {
+                    SendRequestFormNotificationJob::dispatch($requestForm, $factoryManager, $approvalUrlManager);
 
-                Log::info('📤 Đã thêm job gửi email cho quản lý nhà máy vào queue', [
-                    'manager_email' => $factoryManagerEmail,
-                    'request_form_id' => $requestForm->id,
-                    'request_form_type' => $requestForm->type,
-                    'request_form_title' => $requestForm->title,
-                    'approval_url' => $approvalUrlManager,
-                ]);
+                    Log::info('📤 Đã thêm job gửi email cho quản lý nhà máy vào queue', [
+                        'manager_email' => $factoryManagerEmail,
+                        'request_form_id' => $requestForm->id,
+                        'request_form_type' => $requestForm->type,
+                        'request_form_title' => $requestForm->title,
+                        'approval_url' => $approvalUrlManager,
+                    ]);
+                }
             } catch (\Exception $e) {
                 \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
                 Log::error('❌ Lỗi khi thêm job gửi email cho quản lý nhà máy vào queue: '.$e->getMessage());
@@ -733,12 +753,30 @@ class EmpRequestFormController extends Controller
             ], 403);
         }
 
+        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
+            // A partially signed request must not change underneath its approvers.
+            if ($requestForm->digital_signature_supervisor || $requestForm->digital_signature_manager) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Đơn tăng ca đã có chữ ký duyệt, không thể sửa nội dung.',
+                ], 403);
+            }
+            $request->validate(\App\Services\OvertimeApprovalService::rules());
+            if ($request->has('supervisor_id')) {
+                $request->validate(['supervisor_id' => ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()]]);
+            }
+        }
+
         try {
             $updateData = [
                 'title' => $request->title ?? $requestForm->title,
                 'content' => $request->content ?? $requestForm->content,
                 'form_data' => $request->form_data ?? $requestForm->form_data,
             ];
+
+            if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $request->has('supervisor_id')) {
+                $updateData['supervisor_id'] = $request->supervisor_id;
+            }
 
             // Nếu là đơn ủy quyền và có cập nhật authorized_employee_id
             if ($requestForm->type === RequestForm::TYPE_GIAY_UY_QUYEN && $request->has('form_data')) {
@@ -884,12 +922,10 @@ class EmpRequestFormController extends Controller
      */
     public function getFormTypes(): JsonResponse
     {
-        $data = Cache::remember('request_form_types_statuses', 86400, function () {
-            return [
-                'types' => RequestForm::getTypes(),
-                'statuses' => RequestForm::getStatuses(),
-            ];
-        });
+        $data = [
+            'types' => RequestForm::getTypes(),
+            'statuses' => RequestForm::getStatuses(),
+        ];
 
         return response()->json([
             'success' => true,

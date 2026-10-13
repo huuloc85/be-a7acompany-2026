@@ -329,6 +329,7 @@ class AttendanceHistoryController extends BaseController
                 // Calculate attendance results (time_in, time_out, total_hours, shift, day_type, etc.)
                 $result = $this->calculateAttendances($result);
                 app(AttendanceDailyResultStore::class)->synchronize($result, $request);
+                $result = app(\App\Services\OvertimeApprovalService::class)->annotate($result);
             } else {
                 // Original filtering for non-calculation mode
                 if ($arrayDate && count($arrayDate) === 2) {

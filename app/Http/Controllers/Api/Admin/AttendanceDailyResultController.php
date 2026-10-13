@@ -15,9 +15,14 @@ class AttendanceDailyResultController extends BaseController
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
-        return response()->json($store->query($request)
+        $results = $store->query($request)
             ->defaultSort('date', 'employee_id')
             ->allowedSorts(['date', 'employee_id', 'name', 'calendar_category_id'])
-            ->paginate($request->integer('limit', 50))->withQueryString());
+            ->paginate($request->integer('limit', 50))->withQueryString();
+        // Read current approvals even for archived attendance; do not freeze status in snapshots.
+        $results->setCollection(collect(app(\App\Services\OvertimeApprovalService::class)
+            ->annotate($results->getCollection()->toArray())));
+
+        return response()->json($results);
     }
 }

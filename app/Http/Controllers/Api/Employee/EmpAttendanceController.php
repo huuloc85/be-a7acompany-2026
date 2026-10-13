@@ -137,6 +137,7 @@ class EmpAttendanceController extends Controller
 
         // Calculate attendance results using the same logic as Admin controller
         $calculatedResult = $this->calculateAttendances($rawResult);
+        $calculatedResult = app(\App\Services\OvertimeApprovalService::class)->annotate($calculatedResult);
 
         // No pagination for employee, return all results
         $perPage = $request->input('limit', 0);

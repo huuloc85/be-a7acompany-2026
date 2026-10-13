@@ -21,6 +21,8 @@ class RequestForm extends Model
 
     const TYPE_DON_XIN_DI_TRE_VE_SOM = 'don_xin_di_tre_ve_som';
 
+    const TYPE_DON_XIN_TANG_CA = 'don_xin_tang_ca';
+
     // Trạng thái đơn
     const STATUS_PENDING = 'pending';
 
@@ -80,6 +82,7 @@ class RequestForm extends Model
             self::TYPE_DON_XIN_NGHI_VIEC => 'Đơn xin nghỉ việc',
             self::TYPE_DON_XIN_NGHI_PHEP => 'Đơn xin nghỉ phép',
             self::TYPE_DON_XIN_DI_TRE_VE_SOM => 'Đơn xin đi trễ - về sớm',
+            self::TYPE_DON_XIN_TANG_CA => 'Đơn xin tăng ca',
         ];
     }
 
@@ -94,6 +97,42 @@ class RequestForm extends Model
             self::STATUS_REJECTED => 'Từ chối',
             self::STATUS_AUTHORIZED_APPROVED => 'Người được ủy quyền đã duyệt',
         ];
+    }
+
+    public function hasRequiredApprovalSignatures(): bool
+    {
+        if ($this->type === self::TYPE_DON_XIN_TANG_CA) {
+            return ! empty($this->digital_signature_applicant)
+                && ! empty($this->digital_signature_supervisor)
+                && ! empty($this->supervisor_id)
+                && (string) $this->supervisor_approved_by === (string) $this->supervisor_id
+                && (string) $this->employee_id !== (string) $this->supervisor_id;
+        }
+        if ($this->type === self::TYPE_GIAY_UY_QUYEN || ! $this->digital_signature_manager) {
+            return false;
+        }
+        $managerOnlyApplicants = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800',
+            '20122900', '23030100', '17031400'];
+
+        return in_array((string) $this->employee_id, $managerOnlyApplicants, true)
+            || ! empty($this->digital_signature_supervisor);
+    }
+
+    /** Finalize pending forms using the required approver for their type. */
+    public function finalizeApproval(): bool
+    {
+        $approver = $this->type === self::TYPE_DON_XIN_TANG_CA ? $this->supervisor_approved_by : $this->manager_approved_by;
+        if ($this->status !== self::STATUS_PENDING || ! $this->hasRequiredApprovalSignatures()
+            || ! $approver) {
+            return false;
+        }
+        $this->update([
+            'status' => self::STATUS_APPROVED,
+            'approved_by' => $approver,
+            'approved_at' => now(),
+        ]);
+
+        return true;
     }
 
     /**
@@ -205,6 +244,12 @@ class RequestForm extends Model
      */
     public function getDigitalSignatureFields(): array
     {
+        if ($this->type === self::TYPE_DON_XIN_TANG_CA) {
+            return [
+                'digital_signature_applicant' => 'Chữ ký người làm đơn',
+                'digital_signature_supervisor' => 'Chữ ký tổ trưởng',
+            ];
+        }
         if ($this->type === self::TYPE_GIAY_UY_QUYEN) {
             // Đơn ủy quyền - 2 chữ ký
             return [
