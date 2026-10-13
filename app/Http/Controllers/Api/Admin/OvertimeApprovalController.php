@@ -13,7 +13,7 @@ class OvertimeApprovalController extends BaseController
     {
         $data = $request->validate([
             'employee_id' => ['required', 'string', 'exists:employees,id'],
-            'date' => ['required', 'date_format:Y-m-d'],
+            'date' => ['required', 'date_format:Y-m-d', 'after_or_equal:'.\App\Services\OvertimeApprovalService::EFFECTIVE_DATE],
             'shift' => ['required', 'integer', 'in:1,2'],
             'action' => ['required', 'in:approve,cancel'],
             'reason' => ['required', 'string', 'max:500'],

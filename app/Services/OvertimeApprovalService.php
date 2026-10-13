@@ -6,11 +6,13 @@ use App\Models\RequestForm;
 
 class OvertimeApprovalService
 {
+    public const EFFECTIVE_DATE = '2026-10-16';
+
     public static function rules(): array
     {
         return [
             'form_data' => ['required', 'array'],
-            'form_data.ngay_ap_dung' => ['required', 'date_format:Y-m-d'],
+            'form_data.ngay_ap_dung' => ['required', 'date_format:Y-m-d', 'after_or_equal:'.self::EFFECTIVE_DATE],
             'form_data.ca_lam' => ['required', 'integer', 'in:1,2'],
             'form_data.ly_do' => ['required', 'string', 'max:500'],
             // Applicants must not provide approver signatures themselves.
@@ -35,6 +37,7 @@ class OvertimeApprovalService
             ->groupBy(fn ($form) => $form->employee_id.'|'.$form->form_data['ngay_ap_dung']);
 
         return array_map(function ($row) use ($requests) {
+            $applicable = substr((string) $row['date'], 0, 10) >= self::EFFECTIVE_DATE;
             $forms = $requests->get($row['employee_id'].'|'.$row['date'], collect())
                 ->filter(fn ($form) => (int) ($form->form_data['ca_lam'] ?? 0) === (int) $row['shift']);
             $approved = $forms->contains('status', RequestForm::STATUS_APPROVED);
@@ -43,9 +46,10 @@ class OvertimeApprovalService
             $defaultHours = ! in_array($row['hnhc'], ['TC', 'LN'], true)
                 && in_array((int) ($row['calendar_category_id'] ?? 0), [2, 3, 6], true)
                 ? min(1.0, max(0.0, $actualHours)) : 0.0;
-            $requiresApprovalHours = max(0.0, $actualHours - $defaultHours);
+            $requiresApprovalHours = $applicable ? max(0.0, $actualHours - $defaultHours) : 0.0;
 
             $row['overtime_approval'] = [
+                'applicable' => $applicable,
                 'approved' => $approved,
                 'default_hours' => $defaultHours,
                 'approved_hours' => $approved ? $requiresApprovalHours : 0,

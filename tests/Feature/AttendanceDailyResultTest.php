@@ -167,7 +167,7 @@ class AttendanceDailyResultTest extends TestCase
         $this->assertSame(0, DB::table('attendance_daily_results')->count());
     }
 
-    public function test_live_employee_and_archived_views_use_current_overtime_approval(): void
+    public function test_views_do_not_require_approval_before_effective_date(): void
     {
         $form = \App\Models\RequestForm::create([
             'employee_id' => '001', 'type' => 'don_xin_tang_ca',
@@ -176,7 +176,8 @@ class AttendanceDailyResultTest extends TestCase
             'status' => 'pending', 'submitted_at' => now(),
         ]);
         $pending = collect($this->calculate()['data'])->first(fn ($row) => $row['employee_id'] === '001' && $row['date'] === '2026-10-01');
-        $this->assertEquals(0.5, $pending['overtime_approval']['unapproved_hours']);
+        $this->assertFalse($pending['overtime_approval']['applicable']);
+        $this->assertEquals(0, $pending['overtime_approval']['unapproved_hours']);
         $this->assertSame('pending', $pending['overtime_approval']['requests'][0]['status']);
 
         $form->update(['status' => 'approved']);
@@ -187,7 +188,8 @@ class AttendanceDailyResultTest extends TestCase
         $this->assertSame(200, $employeeResponse->getStatusCode(), $employeeResponse->getContent());
         $employeeRow = collect($employeeResponse->getData(true)['data'])->firstWhere('date', '2026-10-01');
         $this->assertSame('001', $employeeRow['employee_id']);
-        $this->assertEquals(0.5, $employeeRow['overtime_approval']['approved_hours']);
+        $this->assertFalse($employeeRow['overtime_approval']['applicable']);
+        $this->assertEquals(0, $employeeRow['overtime_approval']['approved_hours']);
 
         // No recalculation needed after approval, even if raw punches were archived.
         DB::table('attendance_records')->delete();
@@ -195,8 +197,32 @@ class AttendanceDailyResultTest extends TestCase
         $response = (new AttendanceDailyResultController)->index($request, new AttendanceDailyResultStore)->getData(true);
         $saved = collect($response['data'])->firstWhere('date', '2026-10-01');
         $this->assertEquals(0.5, $saved['overtime_hours']);
-        $this->assertEquals(0.5, $saved['overtime_approval']['approved_hours']);
+        $this->assertFalse($saved['overtime_approval']['applicable']);
+        $this->assertEquals(0, $saved['overtime_approval']['approved_hours']);
         $this->assertEquals(0, $saved['overtime_approval']['unapproved_hours']);
+    }
+
+    public function test_overtime_cutoff_uses_shift_start_date_and_preserves_hours(): void
+    {
+        foreach (['2026-10-15', '2026-10-16', '2026-10-17'] as $date) {
+            foreach ([1, 2] as $shift) {
+                foreach ([2, 3, 4, 6] as $category) {
+                    $input = ['employee_id' => '001', 'date' => $date, 'shift' => $shift,
+                        'hnhc' => $shift === 1 ? 'N' : 'D', 'calendar_category_id' => $category,
+                        'total_hours' => 10, 'overtime_hours' => 2];
+                    $row = (new \App\Services\OvertimeApprovalService)->annotate([$input])[0];
+                    $this->assertSame($input, array_diff_key($row, ['overtime_approval' => true]));
+                    $this->assertSame($date >= '2026-10-16', $row['overtime_approval']['applicable']);
+                    $this->assertEquals($date < '2026-10-16' ? 0 : ($category === 4 ? 2 : 1), $row['overtime_approval']['unapproved_hours']);
+                }
+            }
+        }
+        foreach (['2026-10-15' => true, '2026-10-16' => false] as $date => $fails) {
+            $validator = \Illuminate\Support\Facades\Validator::make([
+                'form_data' => ['ngay_ap_dung' => $date, 'ca_lam' => 1, 'ly_do' => 'Công việc'],
+            ], \App\Services\OvertimeApprovalService::rules());
+            $this->assertSame($fails, $validator->fails());
+        }
     }
 
     private function calculate(array $params = []): array
