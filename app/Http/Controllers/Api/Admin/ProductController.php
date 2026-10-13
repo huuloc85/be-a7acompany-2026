@@ -794,6 +794,13 @@ class ProductController extends BaseController
     // addQuantityDetailProduct
     public function addQuantityDetailProduct(Request $request)
     {
+        $request->validate([
+            'shift' => 'required_if:status,1|nullable|in:Ca 1,Ca 2',
+        ], [
+            'shift.required_if' => 'Vui lòng chọn ca làm việc.',
+            'shift.in' => 'Ca làm việc phải là Ca 1 hoặc Ca 2.',
+        ]);
+
         DB::beginTransaction();
         try {
             $date = $request->date ?? Carbon::now()->format('Y-m-d');
@@ -808,6 +815,7 @@ class ProductController extends BaseController
             $dailyQuan->quantity = $request->quantity;
             $dailyQuan->status = $request->status;
             $dailyQuan->date = $date;
+            $dailyQuan->shift = (int) $request->status === 1 ? $request->shift : null;
             $dailyQuan->save();
 
             // Tính lại TotalDailyQuantity từ DailyQuantity

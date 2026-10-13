@@ -16,6 +16,11 @@ class Kernel extends ConsoleKernel
         // $schedule->command('update-stock-quantity:cron')->monthlyOn(1, '08:00')->withoutOverlapping();
         // $schedule->command('sendstamp:delete-rejected')->ever()->withoutOverlapping();
         $schedule->command('attendance:sync')->everyMinute()->withoutOverlapping();
+        $schedule->command('attendance:rotate-storage --apply')
+            ->hourlyAt(5)
+            ->timezone('Asia/Ho_Chi_Minh')
+            ->withoutOverlapping()
+            ->appendOutputTo(storage_path('logs/attendance-retention.log'));
         // Employee provisioning is confirmed on web, then handled by the LAN bridge.
 
         // Tự động xoá vĩnh viễn nhân viên trong thùng rác > 30 ngày

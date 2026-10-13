@@ -116,7 +116,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::get('/device-imports', [\App\Http\Controllers\Api\Admin\AttendanceImportController::class, 'index']);
         Route::post('/device-imports', [\App\Http\Controllers\Api\Admin\AttendanceImportController::class, 'store'])->middleware('throttle:10,1');
         Route::prefix('history')->group(function () {
-            Route::get('/', [AttendanceHistoryController::class, 'index']);
+            Route::get('/', [AttendanceHistoryController::class, 'index'])->middleware(\App\Http\Middleware\RecentAttendanceWindow::class);
             Route::get('/{id}', [AttendanceHistoryController::class, 'show']);
             Route::post('/', [AttendanceHistoryController::class, 'store']);
             Route::patch('/{id}', [AttendanceHistoryController::class, 'update']);
@@ -126,8 +126,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         });
         Route::get('/quantity-report/employees', [QuantityAttendanceController::class, 'employees']);
         Route::get('/quantity-report', [QuantityAttendanceController::class, 'index']);
-        Route::get('/calculate', [AttendanceCalculationController::class, 'calculate']);
-        Route::get('/', [AttendanceHistoryController::class, 'detail']);
+        Route::get('/calculate', [AttendanceCalculationController::class, 'calculate'])->middleware(\App\Http\Middleware\RecentAttendanceWindow::class);
+        Route::get('/', [AttendanceHistoryController::class, 'detail'])->middleware(\App\Http\Middleware\RecentAttendanceWindow::class);
     });
 
     // Roles (Quản Lý Chức Vụ)
@@ -260,9 +260,9 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         });
 
         Route::prefix('attendances')->group(function () {
-            Route::get('/history', [EmpAttendanceController::class, 'history']);
+            Route::get('/history', [EmpAttendanceController::class, 'history'])->middleware(\App\Http\Middleware\RecentAttendanceWindow::class);
             // Route::get('/calculate', ...) → Now merged into index with ?include_calculation=1
-            Route::get('/', [EmpAttendanceController::class, 'index']);
+            Route::get('/', [EmpAttendanceController::class, 'index'])->middleware(\App\Http\Middleware\RecentAttendanceWindow::class);
             // Route::get('/{id}', [EmpAttendance::class, 'show']);
             // Route::patch('/{id}', [EmpAttendance::class, 'update']);
         });
