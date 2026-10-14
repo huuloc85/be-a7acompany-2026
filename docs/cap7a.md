@@ -14,8 +14,7 @@ No changes to existing auth/RBAC functions. New routes:
 CAP7A_ENABLED=true
 CAP7A_TB_URL=https://eu.thingsboard.cloud
 CAP7A_TB_DEVICE_ID=REPLACE_WITH_DEVICE_UUID
-CAP7A_TB_USERNAME=REPLACE_WITH_THINGSBOARD_USER
-CAP7A_TB_PASSWORD=REPLACE_PRIVATELY
+CAP7A_TB_API_KEY="REPLACE_PRIVATELY_WITH_USER_API_KEY"
 CAP7A_COMMANDS_ENABLED=false
 CAP7A_SCREEN_ENABLED=false
 CAP7A_SCREEN_WS_URL=wss://YOUR_GATEWAY_HOST/screen
@@ -23,7 +22,24 @@ CAP7A_SCREEN_GATEWAY_KEY=REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 ```
 
 Use a ThingsBoard user scoped to this device where the subscription permits; do not use
-the device MQTT token here. JWT is cached server-side for 5 minutes; failures are sanitized.
+the device MQTT token here. API keys use `X-Authorization: ApiKey ...` and take priority
+over username/password. This works with accounts signed in through GitHub: generate a
+user API key under Account → Security → API keys. Store only its value, without the
+`ApiKey` prefix. Rotate before expiry and never commit it or expose it to the FE.
+Alternatively, omit the API key and set `CAP7A_TB_USERNAME` / `CAP7A_TB_PASSWORD` for
+password login. JWT is cached server-side for 5 minutes; failures are sanitized.
+An invalid API key does not trigger a login fallback or an automatic RPC retry.
+
+After deploying the updated service/config and editing the hosting environment, run:
+
+```bash
+php artisan config:clear
+php artisan config:cache
+```
+
+Reload the FE Cap7A page. `configured: true` confirms backend configuration, not device
+connectivity; `online: true` also requires fresh Jetson telemetry on the configured UUID.
+
 Use a shared persistent cache (Redis recommended) for all BE replicas: command locks,
 deduplication, screen tickets and revocation must be shared. Do not use array cache in
 production. Refresh config via your normal deployment process. No database migration.

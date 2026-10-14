@@ -13,7 +13,8 @@ class Cap7AThingsBoard
     public function configured(): bool
     {
         return config('cap7a.enabled') && Str::isUuid(config('cap7a.device_id') ?? '')
-            && config('cap7a.username') && config('cap7a.password')
+            && (trim((string) config('cap7a.api_key')) !== ''
+                || (config('cap7a.username') && config('cap7a.password')))
             && preg_match('~^https://[^/?#@]+/?$~', config('cap7a.thingsboard_url') ?? '');
     }
 
@@ -47,7 +48,9 @@ class Cap7AThingsBoard
     private function request(string $method, string $path, array $data): array
     {
         abort_unless($this->configured(), 503, 'Chưa cấu hình ThingsBoard cho Cap7A.');
-        $client = Http::acceptJson()->withHeaders(['X-Authorization' => 'Bearer '.$this->token()])
+        $apiKey = trim((string) config('cap7a.api_key'));
+        $authorization = $apiKey !== '' ? 'ApiKey '.$apiKey : 'Bearer '.$this->token();
+        $client = Http::acceptJson()->withHeaders(['X-Authorization' => $authorization])
             ->connectTimeout(3)->timeout(8)->withOptions(['allow_redirects' => false]);
         try {
             // Never retry an RPC: a timeout may mean it executed but its reply was lost.
@@ -55,7 +58,7 @@ class Cap7AThingsBoard
         } catch (ConnectionException $error) {
             throw new HttpException(504, 'ThingsBoard timeout; kết quả lệnh chưa xác định. Kiểm tra máy trước khi thử lại.');
         }
-        if ($response->status() === 401) {
+        if ($response->status() === 401 && $apiKey === '') {
             Cache::forget($this->cacheKey());
         }
         if (! $response->successful() || ! is_array($response->json())) {

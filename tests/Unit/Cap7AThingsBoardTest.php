@@ -13,7 +13,7 @@ class Cap7AThingsBoardTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['cache.default' => 'array', 'cap7a.enabled' => true,
+        config(['cache.default' => 'array', 'cap7a.enabled' => true, 'cap7a.api_key' => null,
             'cap7a.device_id' => (string) Str::uuid(), 'cap7a.username' => 'test@example.invalid',
             'cap7a.password' => 'secret-test', 'cap7a.thingsboard_url' => 'https://tb.invalid']);
         Http::preventStrayRequests();
@@ -48,6 +48,49 @@ class Cap7AThingsBoardTest extends TestCase
         self::assertSame(5, $result['state']['total']);
         self::assertStringNotContainsString('jwt-test', json_encode($result));
         Http::assertSent(fn ($r) => str_contains($r->url(), '/values/timeseries') && $r->hasHeader('X-Authorization', 'Bearer jwt-test'));
+    }
+
+    public function test_api_key_receives_telemetry_without_login_credentials(): void
+    {
+        config(['cap7a.api_key' => '  tb-test-key  ', 'cap7a.username' => null, 'cap7a.password' => null]);
+        Http::fake(['*/values/timeseries*' => Http::response($this->telemetry())]);
+        $result = (new Cap7AThingsBoard)->status();
+        self::assertTrue($result['configured']);
+        self::assertTrue($result['online']);
+        self::assertStringNotContainsString('tb-test-key', json_encode($result));
+        Http::assertSent(fn ($r) => $r->hasHeader('X-Authorization', 'ApiKey tb-test-key'));
+        Http::assertSentCount(1);
+    }
+
+    public function test_api_key_takes_priority_for_rpc(): void
+    {
+        config(['cap7a.api_key' => 'tb-test-key']);
+        Http::fake(['*/api/rpc/twoway/*' => Http::response(['ok' => true])]);
+        (new Cap7AThingsBoard)->command(['expires_at_ms' => 123, 'action' => 'stop']);
+        Http::assertSent(fn ($r) => $r->hasHeader('X-Authorization', 'ApiKey tb-test-key')
+            && $r['persistent'] === false && $r['method'] === 'cap7a.command');
+        Http::assertSentCount(1);
+    }
+
+    public function test_rejected_api_key_does_not_retry_or_fall_back_to_login(): void
+    {
+        config(['cap7a.api_key' => 'tb-test-key']);
+        Http::fake(['*/values/timeseries*' => Http::response(['message' => 'tb-test-key'], 401)]);
+        try {
+            (new Cap7AThingsBoard)->status();
+            self::fail('Expected rejected API key to fail.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $error) {
+            self::assertSame(502, $error->getStatusCode());
+            self::assertStringNotContainsString('tb-test-key', $error->getMessage());
+        }
+        Http::assertSentCount(1);
+    }
+
+    public function test_whitespace_api_key_without_credentials_is_unconfigured(): void
+    {
+        config(['cap7a.api_key' => '   ', 'cap7a.username' => null, 'cap7a.password' => null]);
+        self::assertFalse((new Cap7AThingsBoard)->status()['configured']);
+        Http::assertNothingSent();
     }
 
     public function test_stale_data_and_last_will_are_offline(): void
