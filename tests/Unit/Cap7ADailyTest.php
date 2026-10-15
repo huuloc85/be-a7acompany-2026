@@ -15,6 +15,7 @@ class Cap7ADailyTest extends TestCase
         config(['cap7a.enabled' => true, 'cap7a.api_key' => 'test-key',
             'cap7a.device_id' => (string) Str::uuid(), 'cap7a.thingsboard_url' => 'https://tb.invalid']);
         Http::preventStrayRequests();
+        Http::fake(['*/values/attributes/SHARED_SCOPE*' => Http::response([])]);
     }
 
     private function report(): array

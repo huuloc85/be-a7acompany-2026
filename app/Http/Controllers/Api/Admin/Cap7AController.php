@@ -74,4 +74,12 @@ class Cap7AController extends Controller
             $lock->release();
         }
     }
+
+    public function resetDaily(Request $request, Cap7AThingsBoard $thingsboard)
+    {
+        $data = $request->validate(['date' => ['required', 'date_format:Y-m-d']]);
+
+        return response()->json($thingsboard->resetDaily($data['date'], (string) $request->user()->getAuthIdentifier()))
+            ->header('Cache-Control', 'no-store');
+    }
 }

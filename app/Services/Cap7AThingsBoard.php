@@ -45,7 +45,7 @@ class Cap7AThingsBoard
         });
     }
 
-    private function request(string $method, string $path, array $data): array
+    private function request(string $method, string $path, array $data, bool $emptyResponse = false): array
     {
         abort_unless($this->configured(), 503, 'Chưa cấu hình ThingsBoard cho Cap7A.');
         $apiKey = trim((string) config('cap7a.api_key'));
@@ -60,6 +60,9 @@ class Cap7AThingsBoard
         }
         if ($response->status() === 401 && $apiKey === '') {
             Cache::forget($this->cacheKey());
+        }
+        if ($emptyResponse && $response->successful()) {
+            return [];
         }
         if (! $response->successful() || ! is_array($response->json())) {
             throw new HttpException($response->status() === 504 ? 504 : 502,
@@ -110,6 +113,10 @@ class Cap7AThingsBoard
     public function daily(string $date): array
     {
         $key = 'cap7a_daily_'.str_replace('-', '_', $date);
+        $resetAt = $this->dailyResetAt($date);
+        if ($resetAt > 0) {
+            $key .= '_since_'.$resetAt;
+        }
         $data = $this->request('get', '/api/plugins/telemetry/DEVICE/'.config('cap7a.device_id').'/values/timeseries',
             ['keys' => $key]);
         $record = $data[$key][0] ?? [];
@@ -118,12 +125,14 @@ class Cap7AThingsBoard
             $report = json_decode($report, true);
         }
         if ($report === null) {
-            return ['available' => false, 'date' => $date, 'report' => null];
+            return ['available' => false, 'date' => $date, 'report' => null,
+                'reset_at_ms' => $resetAt, 'reset_pending' => $resetAt > 0];
         }
         abort_unless(is_array($report) && ($report['schema'] ?? null) === 1
             && ($report['date'] ?? null) === $date && ($report['timezone'] ?? null) === 'Asia/Ho_Chi_Minh'
             && is_array($report['hours'] ?? null) && count($report['hours']) === 24,
             502, 'Bản tổng hợp ngày không hợp lệ.');
+        abort_unless(($report['reset_at_ms'] ?? 0) === $resetAt, 502, 'Báo cáo không khớp mốc reset.');
         $totals = ['ok' => 0, 'ng' => 0, 'unconfirmed' => 0];
         foreach ($report['hours'] as $hour => $row) {
             abort_unless(is_array($row) && ($row['hour'] ?? null) === $hour, 502, 'Giờ thống kê không hợp lệ.');
@@ -135,11 +144,45 @@ class Cap7AThingsBoard
         $classified = $totals['ok'] + $totals['ng'];
 
         return ['available' => true, 'date' => $date, 'received_at_ms' => $record['ts'] ?? null,
+            'reset_at_ms' => $resetAt, 'reset_pending' => false,
             'report' => array_merge($totals, [
                 'total' => $classified + $totals['unconfirmed'],
                 'ok_percent' => $classified > 0 ? round(100 * $totals['ok'] / $classified, 2) : null,
                 'hours' => $report['hours'],
                 'warning' => ! empty($report['invalid_rows']) || ! empty($report['logger_dropped_session']) || ! empty($report['logger_error']),
             ])];
+    }
+
+    private function dailyResetAt(string $date): int
+    {
+        $key = 'cap7a_reset_'.str_replace('-', '_', $date);
+        $attributes = $this->request('get', '/api/plugins/telemetry/DEVICE/'.config('cap7a.device_id').'/values/attributes/SHARED_SCOPE', ['keys' => $key]);
+        foreach ($attributes as $attribute) {
+            if (($attribute['key'] ?? null) === $key) {
+                abort_unless(is_int($attribute['value'] ?? null) && $attribute['value'] > 0, 502, 'Mốc reset không hợp lệ.');
+
+                return $attribute['value'];
+            }
+        }
+
+        return 0;
+    }
+
+    public function resetDaily(string $date, string $actor): array
+    {
+        abort_unless($date === now('Asia/Ho_Chi_Minh')->toDateString(), 422, 'Chỉ reset hiệu suất hôm nay.');
+        $lock = Cache::lock('cap7a:daily-reset:'.hash('sha256', (string) config('cap7a.device_id')), 30);
+        abort_unless($lock->get(), 409, 'Đang xử lý reset.');
+        try {
+            $resetAt = max(now()->getTimestampMs(), $this->dailyResetAt($date) + 1);
+            $this->request('post', '/api/plugins/telemetry/DEVICE/'.config('cap7a.device_id').'/SHARED_SCOPE',
+                ['cap7a_reset_'.str_replace('-', '_', $date) => $resetAt], true);
+            \Illuminate\Support\Facades\Log::info('Cap7A daily reset', ['actor' => $actor, 'date' => $date, 'reset_at_ms' => $resetAt]);
+
+            return ['available' => false, 'date' => $date, 'report' => null,
+                'reset_at_ms' => $resetAt, 'reset_pending' => true];
+        } finally {
+            $lock->release();
+        }
     }
 }
