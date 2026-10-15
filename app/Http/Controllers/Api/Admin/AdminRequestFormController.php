@@ -63,6 +63,14 @@ class AdminRequestFormController extends Controller
         }
 
         // Lọc theo ngày tạo
+        $search = trim((string) $request->input('search', ''));
+        if ($search !== '') {
+            $query->where(function ($query) use ($search) {
+                $query->where('employee_id', 'like', '%'.$search.'%')
+                    ->orWhereHas('employee', fn ($employee) => $employee->where('name', 'like', '%'.$search.'%'));
+            });
+        }
+
         if ($request->has('from_date')) {
             $query->whereDate('submitted_at', '>=', $request->from_date);
         }

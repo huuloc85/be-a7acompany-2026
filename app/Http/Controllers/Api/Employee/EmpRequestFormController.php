@@ -155,6 +155,14 @@ class EmpRequestFormController extends Controller
         }
 
         // Select các columns cần thiết
+        $search = trim((string) $request->input('search', ''));
+        if ($search !== '') {
+            $query->where(function ($query) use ($search) {
+                $query->where('employee_id', 'like', '%'.$search.'%')
+                    ->orWhereHas('employee', fn ($employee) => $employee->where('name', 'like', '%'.$search.'%'));
+            });
+        }
+
         $query->select([
             'id',
             'employee_id',
