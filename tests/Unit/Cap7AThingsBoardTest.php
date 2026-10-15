@@ -122,7 +122,8 @@ class Cap7AThingsBoardTest extends TestCase
     public function test_cap7a_routes_have_authentication_and_superadmin_guard(): void
     {
         $routes = collect(app('router')->getRoutes())->filter(fn ($r) => str_starts_with($r->uri(), 'api/cap7a/'));
-        self::assertCount(3, $routes);
+        self::assertCount(4, $routes);
+        self::assertTrue($routes->contains(fn ($route) => $route->uri() === 'api/cap7a/daily'));
         foreach ($routes as $route) {
             self::assertContains('auth:sanctum', $route->middleware());
             self::assertContains('check.token.expiration', $route->middleware());

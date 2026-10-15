@@ -16,6 +16,14 @@ class Cap7AController extends Controller
         return response()->json($thingsboard->status())->header('Cache-Control', 'no-store');
     }
 
+    public function daily(Request $request, Cap7AThingsBoard $thingsboard)
+    {
+        $data = $request->validate(['date' => ['required', 'date_format:Y-m-d',
+            'before_or_equal:'.now('Asia/Ho_Chi_Minh')->toDateString()]]);
+
+        return response()->json($thingsboard->daily($data['date']))->header('Cache-Control', 'no-store');
+    }
+
     public function command(Request $request, Cap7AThingsBoard $thingsboard)
     {
         $data = $request->validate([

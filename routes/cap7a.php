@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
     ->prefix('cap7a')->group(function () {
         Route::get('/status', [Cap7AController::class, 'status']);
+        Route::get('/daily', [Cap7AController::class, 'daily']);
         Route::post('/commands', [Cap7AController::class, 'command'])->middleware('throttle:12,1');
         Route::post('/screen-sessions', [Cap7AScreenController::class, 'issue'])->middleware('throttle:6,1');
     });

@@ -106,4 +106,40 @@ class Cap7AThingsBoard
             'persistent' => false, 'timeout' => 5000, 'expirationTime' => $command['expires_at_ms'],
         ]);
     }
+
+    public function daily(string $date): array
+    {
+        $key = 'cap7a_daily_'.str_replace('-', '_', $date);
+        $data = $this->request('get', '/api/plugins/telemetry/DEVICE/'.config('cap7a.device_id').'/values/timeseries',
+            ['keys' => $key]);
+        $record = $data[$key][0] ?? [];
+        $report = $record['value'] ?? null;
+        if (is_string($report)) {
+            $report = json_decode($report, true);
+        }
+        if ($report === null) {
+            return ['available' => false, 'date' => $date, 'report' => null];
+        }
+        abort_unless(is_array($report) && ($report['schema'] ?? null) === 1
+            && ($report['date'] ?? null) === $date && ($report['timezone'] ?? null) === 'Asia/Ho_Chi_Minh'
+            && is_array($report['hours'] ?? null) && count($report['hours']) === 24,
+            502, 'Bản tổng hợp ngày không hợp lệ.');
+        $totals = ['ok' => 0, 'ng' => 0, 'unconfirmed' => 0];
+        foreach ($report['hours'] as $hour => $row) {
+            abort_unless(is_array($row) && ($row['hour'] ?? null) === $hour, 502, 'Giờ thống kê không hợp lệ.');
+            foreach (array_keys($totals) as $field) {
+                abort_unless(is_int($row[$field] ?? null) && $row[$field] >= 0, 502, 'Bộ đếm ngày không hợp lệ.');
+                $totals[$field] += $row[$field];
+            }
+        }
+        $classified = $totals['ok'] + $totals['ng'];
+
+        return ['available' => true, 'date' => $date, 'received_at_ms' => $record['ts'] ?? null,
+            'report' => array_merge($totals, [
+                'total' => $classified + $totals['unconfirmed'],
+                'ok_percent' => $classified > 0 ? round(100 * $totals['ok'] / $classified, 2) : null,
+                'hours' => $report['hours'],
+                'warning' => ! empty($report['invalid_rows']) || ! empty($report['logger_dropped_session']) || ! empty($report['logger_error']),
+            ])];
+    }
 }
