@@ -132,10 +132,13 @@ HTTP/1.1 and read timeout >300s. **Disable access logging of /screen query strin
 tickets are bearer secrets. Restrict Origin to the configured FE and firewall direct
 gateway access. No arbitrary VNC target can be supplied by the browser.
 
-Tickets connect once within 30 seconds and last at most 5 minutes. Gateway rechecks user,
-role and login token every 10s; revocation closes the stream (plus HTTP timeout). A new
+Tickets connect once within 30 seconds. Gateway rechecks user, role and login token every
+10s; each successful check renews the viewing lease for another 5 minutes. Revocation or
+gateway disconnect closes the stream. A new
 viewer ticket revokes the previous one for that user. VNC password is entered by user,
-kept in memory only, never stored server-side. FE unmount closes the viewer. Maximum 2
+never stored server-side. FE offers opt-in localStorage password saving on a private
+browser (not application-encrypted), with a forget button; default is not to save.
+FE unmount closes the viewer. Maximum 2
 gateway streams. No clipboard write, mouse/keyboard, restart/shutdown buttons provided.
 
 ## Acceptance (not executed on production by this change)

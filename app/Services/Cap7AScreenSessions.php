@@ -26,12 +26,18 @@ class Cap7AScreenSessions
         $ticket = bin2hex(random_bytes(32));
         $hash = hash('sha256', $ticket);
         $actor = (string) $user->getAuthIdentifier();
-        Cache::put('cap7a:screen:'.$hash, [
-            'token_id' => $token->id, 'actor' => $actor, 'issued_at' => time(),
-            'expires_at' => time() + 300, 'lease' => null,
-        ], 300);
-        // Issuing a new ticket revokes the previous viewer for this user.
-        Cache::put('cap7a:screen:user:'.$actor, $hash, 300);
+        $actorLock = Cache::lock('cap7a:screen:user-lock:'.$actor, 5);
+        abort_unless($actorLock->get(), 409);
+        try {
+            Cache::put('cap7a:screen:'.$hash, [
+                'token_id' => $token->id, 'actor' => $actor, 'issued_at' => time(),
+                'expires_at' => time() + 300, 'lease' => null,
+            ], 300);
+            // Issuing a new ticket revokes the previous viewer for this user.
+            Cache::put('cap7a:screen:user:'.$actor, $hash, 300);
+        } finally {
+            $actorLock->release();
+        }
 
         return ['ticket' => $ticket, 'websocket_url' => $url,
             'connect_within_seconds' => 30, 'max_duration_seconds' => 300, 'view_only' => true];
@@ -44,9 +50,13 @@ class Cap7AScreenSessions
         $key = 'cap7a:screen:'.$hash;
         $lock = Cache::lock($key.':lock', 5);
         abort_unless($lock->get(), 409);
+        $actorLock = null;
         try {
             $record = Cache::get($key);
             abort_unless(is_array($record) && $record['expires_at'] > time(), 403);
+            $candidateLock = Cache::lock('cap7a:screen:user-lock:'.$record['actor'], 5);
+            abort_unless($candidateLock->get(), 409);
+            $actorLock = $candidateLock;
             abort_unless(Cache::get('cap7a:screen:user:'.$record['actor']) === $hash, 403);
             if ($opening) {
                 abort_unless($record['lease'] === null && time() - $record['issued_at'] <= 30, 403);
@@ -60,13 +70,15 @@ class Cap7AScreenSessions
                 && (! $token->expires_at || $token->expires_at->isFuture()), 403);
             $expiration = config('sanctum.expiration');
             abort_if($expiration && $token->created_at->addMinutes($expiration)->isPast(), 403);
-            if ($opening) {
-                $record['lease'] = $lease;
-                Cache::put($key, $record, max(1, $record['expires_at'] - time()));
-            }
+            $record['lease'] ??= $lease;
+            // Sliding lease: the gateway must re-authorize periodically.
+            $record['expires_at'] = time() + 300;
+            Cache::put($key, $record, 300);
+            Cache::put('cap7a:screen:user:'.$record['actor'], $hash, 300);
 
-            return ['allowed' => true, 'remaining_seconds' => $record['expires_at'] - time(), 'view_only' => true];
+            return ['allowed' => true, 'remaining_seconds' => 300, 'view_only' => true];
         } finally {
+            $actorLock?->release();
             $lock->release();
         }
     }

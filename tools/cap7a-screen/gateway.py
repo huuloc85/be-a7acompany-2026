@@ -1,7 +1,7 @@
 """Private WS-to-VNC gateway. Run behind HTTPS proxy; never expose VNC TCP.
 
 Requires a dedicated x11vnc -viewonly endpoint through a loopback SSH tunnel.
-Authorization is rechecked every 10s, and streams close after at most 5 minutes.
+Authorization is rechecked every 10s; active sessions are renewed by the backend.
 """
 import asyncio
 import os
@@ -64,7 +64,7 @@ async def screen(request):
     try:
         lease = str(uuid.uuid4())
         async with ClientSession(timeout=ClientTimeout(total=4)) as client:
-            grant = await authorize(client, config, ticket, lease, True)
+            await authorize(client, config, ticket, lease, True)
             reader, writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', config['vnc_port']), 5)
             ws = web.WebSocketResponse(protocols=('binary',), max_msg_size=1024 * 1024, heartbeat=20)
             await ws.prepare(request)
@@ -86,7 +86,7 @@ async def screen(request):
                     await authorize(client, config, ticket, lease, False)
 
             tasks = [asyncio.create_task(fn()) for fn in (to_vnc, to_browser, check_access)]
-            await asyncio.wait(tasks, timeout=min(300, grant['remaining_seconds']), return_when=asyncio.FIRST_COMPLETED)
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     except (OSError, asyncio.TimeoutError):
         if ws is None:
             raise web.HTTPServiceUnavailable(text='Screen gateway unavailable')
