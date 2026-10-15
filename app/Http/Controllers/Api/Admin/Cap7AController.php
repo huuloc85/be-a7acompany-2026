@@ -43,8 +43,8 @@ class Cap7AController extends Controller
             if ($data['action'] !== 'ping') {
                 abort_unless(($status['state']['remote_allowed'] ?? false) === true, 409, 'Người tại máy chưa cho phép điều khiển.');
             }
-            if (! in_array($data['action'], ['ping', 'stop'], true)) {
-                abort_unless(($status['state']['mode'] ?? null) === 'STOP', 409, 'Cần STOP trước khi đổi chế độ/cài đặt.');
+            if (in_array($data['action'], ['set_threshold', 'set_roi', 'clear_roi'], true)) {
+                abort_unless(($status['state']['mode'] ?? null) === 'STOP', 409, 'Cần STOP trước khi đổi cài đặt.');
             }
             // Mark before dispatch, including uncertain timeout outcomes. No automated replay.
             abort_unless(Cache::add($deviceKey.':request:'.$data['request_id'], true, 86400), 409, 'Mã lệnh đã được sử dụng; kiểm tra trạng thái máy.');

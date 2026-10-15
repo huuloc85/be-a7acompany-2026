@@ -8,7 +8,34 @@ import os
 import re
 import uuid
 from urllib.parse import urlsplit
-from aiohttp import ClientSession, ClientTimeout, WSMsgType, web
+from aiohttp import ClientError, ClientSession, ClientTimeout, WSMsgType, web
+
+
+class TemporaryAuthError(Exception):
+    pass
+
+
+def lease_deadline(grant, started):
+    seconds = grant.get('remaining_seconds')
+    if type(seconds) is not int or seconds <= 0:
+        raise web.HTTPForbidden()
+    return started + min(seconds, 300)
+
+
+async def renew_access(client, config, ticket, lease, deadline):
+    loop = asyncio.get_running_loop()
+    while True:
+        await asyncio.sleep(min(10, max(0, deadline - loop.time())))
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise TimeoutError('Authorization lease expired')
+        started = loop.time()
+        try:
+            grant = await asyncio.wait_for(authorize(client, config, ticket, lease, False), remaining)
+        except (TemporaryAuthError, ClientError, OSError, asyncio.TimeoutError) as error:
+            print('Screen: authorization temporarily unavailable:', type(error).__name__, flush=True)
+            continue
+        deadline = lease_deadline(grant, started)
 
 
 def settings():
@@ -40,7 +67,10 @@ async def authorize(client, config, ticket, lease, opening):
     async with client.post(config['auth_url'], json={'ticket': ticket, 'lease': lease, 'opening': opening},
                            headers={'X-Cap7A-Gateway-Key': config['key'], 'Accept': 'application/json'},
                            allow_redirects=False) as response:
+        if response.status in (408, 409, 429) or response.status >= 500:
+            raise TemporaryAuthError('HTTP ' + str(response.status))
         if response.status != 200:
+            print('Screen: authorization rejected, HTTP', response.status, flush=True)
             raise web.HTTPForbidden()
         body = await response.json()
         if body.get('allowed') is not True or body.get('view_only') is not True:
@@ -55,16 +85,18 @@ async def screen(request):
     ticket = request.query.get('ticket', '')
     if not re.fullmatch('[a-f0-9]{64}', ticket):
         raise web.HTTPForbidden()
-    if request.app['active'] >= 2:
+    if request.app['connections']['active'] >= 2:
         raise web.HTTPTooManyRequests()
-    request.app['active'] += 1
+    request.app['connections']['active'] += 1
     writer = None
     ws = None
     tasks = []
     try:
         lease = str(uuid.uuid4())
-        async with ClientSession(timeout=ClientTimeout(total=4)) as client:
-            await authorize(client, config, ticket, lease, True)
+        async with ClientSession(timeout=ClientTimeout(total=8)) as client:
+            started = asyncio.get_running_loop().time()
+            grant = await authorize(client, config, ticket, lease, True)
+            deadline = lease_deadline(grant, started)
             reader, writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', config['vnc_port']), 5)
             ws = web.WebSocketResponse(protocols=('binary',), max_msg_size=1024 * 1024, heartbeat=20)
             await ws.prepare(request)
@@ -81,13 +113,17 @@ async def screen(request):
                     await ws.send_bytes(chunk)
 
             async def check_access():
-                while True:
-                    await asyncio.sleep(10)
-                    await authorize(client, config, ticket, lease, False)
+                await renew_access(client, config, ticket, lease, deadline)
 
-            tasks = [asyncio.create_task(fn()) for fn in (to_vnc, to_browser, check_access)]
-            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    except (OSError, asyncio.TimeoutError):
+            tasks = [asyncio.create_task(fn(), name=name) for fn, name in (
+                (to_vnc, 'browser-connection'), (to_browser, 'vnc-connection'), (check_access, 'authorization'))]
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                error = task.exception()
+                print('Screen: disconnected:', task.get_name(),
+                      type(error).__name__ if error else 'connection closed', flush=True)
+    except (TemporaryAuthError, ClientError, OSError, asyncio.TimeoutError) as error:
+        print('Screen: connection failed:', type(error).__name__, flush=True)
         if ws is None:
             raise web.HTTPServiceUnavailable(text='Screen gateway unavailable')
     finally:
@@ -98,14 +134,14 @@ async def screen(request):
             await ws.close()
         if writer is not None:
             writer.close()
-        request.app['active'] -= 1
+        request.app['connections']['active'] -= 1
     return ws
 
 
 def create_app(config):
     app = web.Application()
     app['config'] = config
-    app['active'] = 0
+    app['connections'] = {'active': 0}
     app.router.add_get('/screen', screen)
     return app
 

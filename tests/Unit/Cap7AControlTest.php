@@ -94,6 +94,44 @@ class Cap7AControlTest extends TestCase
         self::assertFalse((new Cap7AScreenSessions)->enabled());
     }
 
+    public function test_mode_changes_and_reset_do_not_require_stop(): void
+    {
+        foreach (['RUN', 'TEST', 'STOP'] as $mode) {
+            foreach (['run', 'test', 'stop', 'reset_counters'] as $action) {
+                $session = (string) Str::uuid();
+                $request = $this->request($session);
+                $request->merge(['action' => $action]);
+                $service = Mockery::mock(Cap7AThingsBoard::class);
+                $service->shouldReceive('status')->once()->andReturn(['online' => true,
+                    'state' => ['session_id' => $session, 'remote_allowed' => true, 'mode' => $mode]]);
+                $service->shouldReceive('command')->once()->withArgs(fn ($data) => $data['action'] === $action)
+                    ->andReturnUsing(fn ($data) => ['ok' => true, 'request_id' => $data['request_id']]);
+                self::assertSame(200, (new Cap7AController)->command($request, $service)->getStatusCode());
+            }
+        }
+    }
+
+    public function test_settings_still_require_stop(): void
+    {
+        foreach (['RUN', 'TEST'] as $mode) {
+            foreach (['set_threshold', 'set_roi', 'clear_roi'] as $action) {
+                $session = (string) Str::uuid();
+                $request = $this->request($session);
+                $request->merge(['action' => $action, 'values' => ['threshold' => 50, 'roi' => [0, 0, 100, 100]]]);
+                $service = Mockery::mock(Cap7AThingsBoard::class);
+                $service->shouldReceive('status')->once()->andReturn(['online' => true,
+                    'state' => ['session_id' => $session, 'remote_allowed' => true, 'mode' => $mode]]);
+                $service->shouldNotReceive('command');
+                try {
+                    (new Cap7AController)->command($request, $service);
+                    self::fail('Settings dispatched while '.$mode);
+                } catch (HttpException $error) {
+                    self::assertSame(409, $error->getStatusCode());
+                }
+            }
+        }
+    }
+
     public function test_screen_gateway_rejects_missing_secret(): void
     {
         config(['cap7a.screen_gateway_key' => str_repeat('x', 32)]);
