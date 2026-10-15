@@ -470,6 +470,10 @@ class EmpRequestFormController extends Controller
             ], 403);
         }
 
+        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval()) {
+            return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);
+        }
+
         // Validate rejection reason
         $request->validate([
             'rejection_reason' => 'required|string|min:10|max:500',
@@ -482,7 +486,9 @@ class EmpRequestFormController extends Controller
             $requestForm->update([
                 'status' => RequestForm::STATUS_REJECTED,
                 'rejection_reason' => $request->rejection_reason,
-                'rejected_at' => now(),
+                'approved_by' => $currentUserId,
+                'approved_at' => now(),
+                'submitted_at' => $requestForm->submitted_at,
             ]);
 
             $requestForm->refresh();
@@ -497,7 +503,9 @@ class EmpRequestFormController extends Controller
                     'id' => $requestForm->id,
                     'status' => $requestForm->status,
                     'rejection_reason' => $requestForm->rejection_reason,
-                    'rejected_at' => $requestForm->rejected_at,
+                    'approved_by' => $requestForm->approved_by,
+                    'approved_at' => $requestForm->approved_at,
+                    'rejected_at' => $requestForm->approved_at,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -1153,6 +1161,7 @@ class EmpRequestFormController extends Controller
                 'authorized_approved_by',
                 'authorized_approved_at',
                 'submitted_at',
+                'approved_by',
                 'approved_at',
                 'rejected_at',
                 'created_at',
@@ -1163,6 +1172,7 @@ class EmpRequestFormController extends Controller
 
         // ✅ Eager load với FULL FIELDS (id, name, email, phone) theo yêu cầu FE
         $query->with([
+            'approvedBy:id,name,email,phone',
             'employee:id,name,email,phone',
             'delegatorApprovedBy:id,name,email,phone',
             'authorizedApprovedBy:id,name,email,phone',
@@ -1351,7 +1361,9 @@ class EmpRequestFormController extends Controller
             $requestForm->update([
                 'status' => RequestForm::STATUS_REJECTED,
                 'rejection_reason' => $request->rejection_reason,
-                'rejected_at' => now(),
+                'approved_by' => $currentUserId,
+                'approved_at' => now(),
+                'submitted_at' => $requestForm->submitted_at,
             ]);
 
             $requestForm->refresh();
@@ -1369,7 +1381,9 @@ class EmpRequestFormController extends Controller
                     'id' => $requestForm->id,
                     'status' => $requestForm->status,
                     'rejection_reason' => $requestForm->rejection_reason,
-                    'rejected_at' => $requestForm->rejected_at,
+                    'approved_by' => $requestForm->approved_by,
+                    'approved_at' => $requestForm->approved_at,
+                    'rejected_at' => $requestForm->approved_at,
                 ],
             ]);
         } catch (\Exception $e) {

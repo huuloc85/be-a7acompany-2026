@@ -130,6 +130,11 @@ class AdminRequestFormController extends Controller
      */
     public function approve(Request $request, string $id): JsonResponse
     {
+        $request->validate([
+            'action' => 'required|in:approve,reject',
+            'rejection_reason' => 'required_if:action,reject|nullable|string|min:10|max:500',
+        ]);
+
         $requestForm = RequestForm::find($id);
 
         if (! $requestForm) {
@@ -250,6 +255,7 @@ class AdminRequestFormController extends Controller
                     'approved_by' => Auth::id(),
                     'rejection_reason' => $request->input('rejection_reason'),
                     'approved_at' => now()->format('Y-m-d H:i:s'),
+                    'submitted_at' => $requestForm->submitted_at,
                 ]);
                 $message = 'Đơn yêu cầu đã được từ chối';
             }
