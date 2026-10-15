@@ -217,7 +217,7 @@ class AttendanceDailyResultTest extends TestCase
                 }
             }
         }
-        foreach (['2026-10-15' => true, '2026-10-16' => false] as $date => $fails) {
+        foreach (['2026-09-15' => true, '2026-09-16' => false, '2026-09-30' => false, '2026-10-01' => false, '2026-10-15' => false, '2026-10-31' => false, '2026-11-01' => true] as $date => $fails) {
             $validator = \Illuminate\Support\Facades\Validator::make([
                 'form_data' => ['ngay_ap_dung' => $date, 'ca_lam' => 1, 'ly_do' => 'Công việc'],
             ], \App\Services\OvertimeApprovalService::rules());

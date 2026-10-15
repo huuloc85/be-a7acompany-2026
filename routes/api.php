@@ -108,6 +108,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::get('/statistics', [AdminRequestFormController::class, 'getStatistics']); // Thống kê
         Route::get('/{id}', [AdminRequestFormController::class, 'show']); // Xem chi tiết đơn
         Route::post('/{id}/approve', [AdminRequestFormController::class, 'approve']); // Duyệt/từ chối đơn
+        Route::delete('/{id}', [AdminRequestFormController::class, 'destroy']);
     });
 
     // Attendance Records (Quản Lý Chấm Công)

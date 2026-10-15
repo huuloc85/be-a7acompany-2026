@@ -10,9 +10,12 @@ class OvertimeApprovalService
 
     public static function rules(): array
     {
+        $today = now('Asia/Ho_Chi_Minh');
+        $earliest = $today->copy()->startOfMonth()->subDays(15)->toDateString();
+
         return [
             'form_data' => ['required', 'array'],
-            'form_data.ngay_ap_dung' => ['required', 'date_format:Y-m-d', 'after_or_equal:'.self::EFFECTIVE_DATE],
+            'form_data.ngay_ap_dung' => ['required', 'date_format:Y-m-d', 'after_or_equal:'.$earliest, 'before_or_equal:'.$today->copy()->endOfMonth()->toDateString()],
             'form_data.ca_lam' => ['required', 'integer', 'in:1,2'],
             'form_data.ly_do' => ['required', 'string', 'max:500'],
             // Applicants must not provide approver signatures themselves.

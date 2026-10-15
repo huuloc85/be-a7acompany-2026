@@ -12,6 +12,34 @@ use Illuminate\Support\Facades\Storage;
 
 class AdminRequestFormController extends Controller
 {
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $role = strtolower(trim($request->user()?->role?->role_name ?? ''));
+        if (! in_array($role, ['super admin', 'super-admin', 'super_admin'], true)) {
+            return response()->json(['success' => false, 'message' => 'Chỉ Super Admin được xoá đơn.'], 403);
+        }
+
+        return DB::transaction(function () use ($request, $id) {
+            $form = RequestForm::whereKey($id)->lockForUpdate()->first();
+            if (! $form) {
+                return response()->json(['success' => false, 'message' => 'Không tìm thấy đơn yêu cầu.'], 404);
+            }
+            $backup = 'deleted-request-forms/'.$form->id.'-'.\Illuminate\Support\Str::uuid().'.json';
+            $saved = Storage::disk('local')->put($backup, json_encode([
+                'deleted_by' => $request->user()->id,
+                'deleted_at' => now()->toIso8601String(),
+                'request_form' => $form->getAttributes(),
+            ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            if (! $saved) {
+                throw new \RuntimeException('Không thể sao lưu đơn trước khi xoá.');
+            }
+            // Keep signature files for recovery; no punches or attendance hours are deleted.
+            $form->delete();
+
+            return response()->json(['success' => true, 'message' => 'Đã xoá đơn yêu cầu.']);
+        });
+    }
+
     /**
      * Display a listing of all request forms for admin management
      */
