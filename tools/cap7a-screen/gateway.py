@@ -21,10 +21,18 @@ def settings():
         raise ValueError('Gateway key must have at least 32 characters')
     if os.environ.get('CAP7A_VNC_VIEW_ONLY_CONFIRMED') != 'yes':
         raise ValueError('Configure and verify a server-side view-only VNC endpoint first')
-    origin = os.environ['CAP7A_FE_ORIGIN'].rstrip('/')
-    if not origin.startswith('https://'):
-        raise ValueError('Production FE origin must use HTTPS')
-    return {'auth_url': url, 'key': key, 'origin': origin,
+    origins = {value.strip().rstrip('/') for value in os.environ['CAP7A_FE_ORIGIN'].split(',')}
+    for origin in origins:
+        parsed_origin = urlsplit(origin)
+        # HTTP is only allowed for an explicitly configured local development UI.
+        local_http = parsed_origin.scheme == 'http' and parsed_origin.hostname in ('localhost', '127.0.0.1', '::1')
+        if (not parsed_origin.hostname or '*' in origin or parsed_origin.username is not None
+                or parsed_origin.password is not None or parsed_origin.path
+                or parsed_origin.query or parsed_origin.fragment
+                or (parsed_origin.scheme != 'https' and not local_http)):
+            raise ValueError('FE origins must be exact HTTPS origins or HTTP loopback origins')
+        parsed_origin.port  # Validate any explicit port before starting the service.
+    return {'auth_url': url, 'key': key, 'origins': origins,
             'vnc_port': int(os.environ.get('CAP7A_VNC_PORT', '5903'))}
 
 
@@ -42,7 +50,7 @@ async def authorize(client, config, ticket, lease, opening):
 
 async def screen(request):
     config = request.app['config']
-    if request.headers.get('Origin') != config['origin']:
+    if request.headers.get('Origin') not in config['origins']:
         raise web.HTTPForbidden()
     ticket = request.query.get('ticket', '')
     if not re.fullmatch('[a-f0-9]{64}', ticket):
@@ -104,4 +112,5 @@ def create_app(config):
 
 if __name__ == '__main__':
     # Tokens are in query strings: disable access logging here AND on the proxy.
-    web.run_app(create_app(settings()), host='127.0.0.1', port=6081, access_log=None)
+    web.run_app(create_app(settings()), host='127.0.0.1',
+                port=int(os.environ.get('CAP7A_GATEWAY_PORT', '6081')), access_log=None)

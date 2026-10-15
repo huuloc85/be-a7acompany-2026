@@ -11,6 +11,7 @@ return [
     'password' => env('CAP7A_TB_PASSWORD'),
     'stale_seconds' => 20,
     'screen_enabled' => env('CAP7A_SCREEN_ENABLED', false),
+    'screen_dynamic_url' => env('CAP7A_SCREEN_DYNAMIC_URL', false),
     'screen_ws_url' => env('CAP7A_SCREEN_WS_URL'),
     'screen_gateway_key' => env('CAP7A_SCREEN_GATEWAY_KEY'),
 ];

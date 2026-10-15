@@ -13,3 +13,4 @@ Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
 
 // Gateway only: shared secret plus a short-lived, user-bound single-use ticket.
 Route::post('/cap7a-screen/authorize', [Cap7AScreenController::class, 'checkAccess']);
+Route::post('/cap7a-screen/register', [Cap7AScreenController::class, 'registerEndpoint'])->middleware('throttle:10,1');

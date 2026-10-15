@@ -10,13 +10,17 @@ class Cap7AScreenSessions
     public function enabled(): bool
     {
         return config('cap7a.screen_enabled')
-            && preg_match('~^wss://[^?#@]+$~', config('cap7a.screen_ws_url') ?? '')
+            && (config('cap7a.screen_dynamic_url')
+                || preg_match('~^wss://[^?#@]+$~', config('cap7a.screen_ws_url') ?? ''))
             && strlen(config('cap7a.screen_gateway_key') ?? '') >= 32;
     }
 
     public function issue($user): array
     {
         abort_unless($this->enabled(), 503, 'Chưa cấu hình gateway màn hình.');
+        $url = config('cap7a.screen_dynamic_url')
+            ? Cache::get($this->endpointCacheKey()) : config('cap7a.screen_ws_url');
+        abort_unless($url, 503, 'Gateway chưa sẵn sàng; mở ứng dụng Cap7A trên Jetson và đợi tunnel kết nối.');
         $token = $user->currentAccessToken();
         abort_unless($token instanceof PersonalAccessToken, 403, 'Cần phiên đăng nhập bằng token.');
         $ticket = bin2hex(random_bytes(32));
@@ -29,7 +33,7 @@ class Cap7AScreenSessions
         // Issuing a new ticket revokes the previous viewer for this user.
         Cache::put('cap7a:screen:user:'.$actor, $hash, 300);
 
-        return ['ticket' => $ticket, 'websocket_url' => config('cap7a.screen_ws_url'),
+        return ['ticket' => $ticket, 'websocket_url' => $url,
             'connect_within_seconds' => 30, 'max_duration_seconds' => 300, 'view_only' => true];
     }
 
@@ -65,5 +69,10 @@ class Cap7AScreenSessions
         } finally {
             $lock->release();
         }
+    }
+
+    public function endpointCacheKey(): string
+    {
+        return 'cap7a:screen:endpoint:'.hash('sha256', (string) config('cap7a.screen_gateway_key'));
     }
 }

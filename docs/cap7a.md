@@ -53,6 +53,38 @@ for these routes or gateway tickets. Result timestamps refer to the result mode 
 
 ## Read-only desktop: dedicated gateway host required
 
+### App-owned Quick Tunnel on Jetson (optional)
+
+The desktop app can now own the VNC/gateway/cloudflared processes using its
+`cap7a_screen.py` supervisor and private `screen_config.json` (created once by
+`configure_screen.py` on Jetson). This is not a boot service: opening the app starts
+the supervisor, closing the app terminates its own children. Offline/Mac runs skip it.
+Dedicated loopback ports 5902/6082 avoid the manual 5901/6081 services. Occupied ports
+cause screen startup to fail rather than reuse or kill an unknown service. Camera/PLC
+startup never waits for the supervisor. Dependency failure stops screen services only;
+retry on a safe app restart. Logs go to the app launcher log, without credentials.
+
+On hosting, enable `CAP7A_SCREEN_DYNAMIC_URL=true` alongside `CAP7A_SCREEN_ENABLED=true`
+and the existing shared `CAP7A_SCREEN_GATEWAY_KEY`, then refresh Laravel config cache.
+The static `CAP7A_SCREEN_WS_URL` is ignored in this mode. The supervisor registers its
+new URL every 30 seconds at `POST /api/cap7a-screen/register`, authenticated with the
+gateway key over HTTPS (redirects refused). Only exact `wss://<name>.trycloudflare.com/screen`
+URLs are accepted. The endpoint is cached for 90 seconds, namespaced by gateway key;
+without renewal, new viewing sessions fail closed. A registration is not proof that
+Cloudflare is reachable from the viewer; the browser still performs the WSS handshake.
+Existing ticket/user authorization remains mandatory. No MQTT/ThingsBoard credentials
+are used for registration. Use shared Redis cache across BE workers.
+
+Install `cloudflared`, `x11vnc` and the gateway's own Python venv once. The desktop user
+must be able to read the active Xauthority and VNC password file without sudo. Run
+`configure_screen.py` as that user; defaults match `/home/ubuntu/cap7a-screen` and the
+GDM X11 session. Configuration errors never prevent local inspection. Do not start the
+app as root. This integration does not turn Quick Tunnel into a production service:
+its URL changes and uptime is not guaranteed. An active viewer may need to reconnect
+after closing/reopening the app; no desktop input is permitted.
+
+The manual gateway deployment below remains supported with dynamic mode disabled.
+
 This cannot run on static FE hosting. A Linux service host needs VPN/SSH reachability to
 Jetson, HTTPS/WSS reverse proxy, and HTTPS reachability to Laravel. No public port 5900.
 The gateway is separate from PHP workers, but its source lives in this BE repo.
@@ -87,6 +119,13 @@ CAP7A_VNC_VIEW_ONLY_CONFIRMED=yes
 Set the last flag ONLY after verifying x11vnc -viewonly actually rejects keyboard/mouse
 from a VNC client. noVNC viewOnly is an additional UI restriction, not a security boundary.
 The transport can forward RFB input, so attaching it to a writable VNC server is unsafe.
+
+`CAP7A_FE_ORIGIN` accepts a comma-separated allowlist, for example
+`https://a7acompany.com,http://localhost:5173`. The scheme, hostname and port must match
+the browser Origin exactly. HTTP is permitted only for explicitly listed loopback
+hosts; wildcards, credentials and URL paths are rejected. Existing single-origin
+configuration still works. Restart only the gateway after changing this environment
+variable; ticket validation and Super Admin authorization remain mandatory.
 
 Gateway binds 127.0.0.1:6081. Reverse proxy HTTPS /screen to it with WebSocket Upgrade,
 HTTP/1.1 and read timeout >300s. **Disable access logging of /screen query strings**:
