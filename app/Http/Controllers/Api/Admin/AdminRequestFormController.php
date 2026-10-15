@@ -118,10 +118,16 @@ class AdminRequestFormController extends Controller
             ], 403);
         }
 
-        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $request->input('action') === 'approve') {
+        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && ! $requestForm->requiresManagerApproval() && $request->input('action') === 'approve') {
             // Employee-submitted overtime is approved by its assigned supervisor, not a manager signature.
             return app(\App\Http\Controllers\Api\Employee\EmpRequestFormController::class)
                 ->approveBySupervisor($request, $id);
+        }
+
+        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval()
+            && (in_array((string) Auth::id(), ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'], true)
+                || (string) Auth::id() === (string) $requestForm->employee_id)) {
+            return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);
         }
 
         try {

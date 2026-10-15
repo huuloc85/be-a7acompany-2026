@@ -334,6 +334,9 @@ class EmpRequestFormController extends Controller
 
         // Kiểm tra đã có chữ ký supervisor chưa
         if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
+            if ($requestForm->requiresManagerApproval()) {
+                return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);
+            }
             if ((string) $requestForm->employee_id === (string) $currentUserId || ! $requestForm->digital_signature_applicant) {
                 return response()->json(['success' => false, 'message' => 'Đơn tăng ca cần chữ ký người làm đơn và tổ trưởng khác người làm đơn.'], 422);
             }
@@ -517,7 +520,9 @@ class EmpRequestFormController extends Controller
         if ($request->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
             $request->validate(\App\Services\OvertimeApprovalService::rules());
             $request->validate([
-                'supervisor_id' => ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()],
+                'supervisor_id' => (new RequestForm(['employee_id' => Auth::id()]))->requiresManagerApproval()
+                    ? ['nullable']
+                    : ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()],
                 'digital_signature_applicant' => ['required'],
             ]);
         }
@@ -554,7 +559,7 @@ class EmpRequestFormController extends Controller
 
             // Lấy thông tin supervisor để gửi email thông báo (nếu có)
             $supervisor = null;
-            if (! empty($createData['supervisor_id'])) {
+            if (! empty($createData['supervisor_id']) && ! ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval())) {
                 $supervisor = \App\Models\Employee::select('id', 'name', 'email', 'phone')
                     ->find($createData['supervisor_id']);
             }
@@ -658,7 +663,7 @@ class EmpRequestFormController extends Controller
                 ];
 
                 // Dispatch job để gửi email cho quản lý nhà máy với URL riêng
-                if ($requestForm->type !== RequestForm::TYPE_DON_XIN_TANG_CA) {
+                if ($requestForm->type !== RequestForm::TYPE_DON_XIN_TANG_CA || $requestForm->requiresManagerApproval()) {
                     SendRequestFormNotificationJob::dispatch($requestForm, $factoryManager, $approvalUrlManager);
 
                     Log::info('📤 Đã thêm job gửi email cho quản lý nhà máy vào queue', [
@@ -762,7 +767,7 @@ class EmpRequestFormController extends Controller
                 ], 403);
             }
             $request->validate(\App\Services\OvertimeApprovalService::rules());
-            if ($request->has('supervisor_id')) {
+            if ($request->has('supervisor_id') && ! $requestForm->requiresManagerApproval()) {
                 $request->validate(['supervisor_id' => ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()]]);
             }
         }

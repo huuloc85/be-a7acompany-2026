@@ -99,9 +99,20 @@ class RequestForm extends Model
         ];
     }
 
+    public function requiresManagerApproval(): bool
+    {
+        return in_array((string) $this->employee_id, ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800',
+            '22122900', '23080100', '23011400'], true);
+    }
+
     public function hasRequiredApprovalSignatures(): bool
     {
         if ($this->type === self::TYPE_DON_XIN_TANG_CA) {
+            if ($this->requiresManagerApproval()) {
+                return ! empty($this->digital_signature_applicant) && ! empty($this->digital_signature_manager)
+                    && ! empty($this->manager_approved_by) && (string) $this->manager_approved_by !== (string) $this->employee_id;
+            }
+
             return ! empty($this->digital_signature_applicant)
                 && ! empty($this->digital_signature_supervisor)
                 && ! empty($this->supervisor_id)
@@ -112,7 +123,7 @@ class RequestForm extends Model
             return false;
         }
         $managerOnlyApplicants = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800',
-            '20122900', '23030100', '17031400'];
+            '22122900', '23080100', '23011400'];
 
         return in_array((string) $this->employee_id, $managerOnlyApplicants, true)
             || ! empty($this->digital_signature_supervisor);
@@ -121,7 +132,7 @@ class RequestForm extends Model
     /** Finalize pending forms using the required approver for their type. */
     public function finalizeApproval(): bool
     {
-        $approver = $this->type === self::TYPE_DON_XIN_TANG_CA ? $this->supervisor_approved_by : $this->manager_approved_by;
+        $approver = $this->type === self::TYPE_DON_XIN_TANG_CA && ! $this->requiresManagerApproval() ? $this->supervisor_approved_by : $this->manager_approved_by;
         if ($this->status !== self::STATUS_PENDING || ! $this->hasRequiredApprovalSignatures()
             || ! $approver) {
             return false;
@@ -247,7 +258,7 @@ class RequestForm extends Model
         if ($this->type === self::TYPE_DON_XIN_TANG_CA) {
             return [
                 'digital_signature_applicant' => 'Chữ ký người làm đơn',
-                'digital_signature_supervisor' => 'Chữ ký tổ trưởng',
+                ($this->requiresManagerApproval() ? 'digital_signature_manager' : 'digital_signature_supervisor') => 'Chữ ký người duyệt',
             ];
         }
         if ($this->type === self::TYPE_GIAY_UY_QUYEN) {
