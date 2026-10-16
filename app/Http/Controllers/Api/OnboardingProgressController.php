@@ -12,7 +12,23 @@ class OnboardingProgressController extends Controller
     private function key(Request $request, string $guide): array
     {
         abort_unless($request->user(), 401);
-        validator(['guide_id' => $guide], ['guide_id' => ['required', Rule::in(['welcome', 'profile', 'attendance', 'schedules', 'salary', 'requests'])]])->validate();
+        validator(['guide_id' => $guide], ['guide_id' => ['required', Rule::in([
+            'welcome', 'profile', 'attendance', 'schedules', 'salary', 'requests',
+            'choose-product',
+            'production-quantity',
+            'production-errors',
+            'production-history',
+            'employee-activity',
+            'stamp-request',
+            'stamp-requests-history',
+            'stamp-create',
+            'stamp-history',
+            'stock',
+            'total-schedules',
+            'team-activity',
+            'products',
+            'authorized-requests',
+        ])]])->validate();
         $data = $request->validate(['version' => 'required|integer|min:1|max:1000']);
 
         return ['employee_id' => (string) $request->user()->getAuthIdentifier(), 'guide_id' => $guide, 'version' => (int) $data['version']];
