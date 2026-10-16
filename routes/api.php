@@ -72,6 +72,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         return;
     }
     Route::post('/auth/check', [AuthController::class, 'authCheck']);
+    Route::get('/onboarding/progress/{guide}', [\App\Http\Controllers\Api\OnboardingProgressController::class, 'show']);
+    Route::put('/onboarding/progress/{guide}', [\App\Http\Controllers\Api\OnboardingProgressController::class, 'update']);
     Route::post('/auth/confirm-login', [AuthController::class, 'authConfirmLogin']);
     Route::get('/birthday', [AuthController::class, 'getBirthdayEmployees']);
 
