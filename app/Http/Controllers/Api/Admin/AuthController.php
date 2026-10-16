@@ -375,7 +375,7 @@ class AuthController extends BaseController
                 ->findOrFail($id);
 
             $validated = $request->validate([
-                'photo' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+                'photo' => 'required|image|mimes:jpeg,png,jpg',
             ]);
 
             $oldPhoto = $employee->photo;
