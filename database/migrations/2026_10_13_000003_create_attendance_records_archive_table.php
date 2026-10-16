@@ -17,7 +17,7 @@ return new class extends Migration
             $table->time('time', 6)->nullable();
             $table->timestamp('created_at')->nullable();
             $table->timestamp('updated_at')->nullable();
-            $table->timestamp('archived_at');
+            $table->timestamp('archived_at')->useCurrent();
             $table->index(['date', 'employee_code']);
         });
     }
