@@ -49,8 +49,13 @@ class SalaryController extends BaseController
             if ($salary->calculator_key) {
                 $snapshot = DB::table('payroll_snapshots')->where('salary_id', $id)->first();
                 $draft = $snapshot ? json_decode($snapshot->draft, true) : null;
-                if ($draft && explode(':', $salary->calculator_key)[0] !== $request->input('company', 'vvp')) {
-                    $draft['rows'] = [];
+                if ($draft && $request->input('company', 'vvp') !== 'all') {
+                    $company = $request->input('company', 'vvp');
+                    $draft['rows'] = array_values(array_filter($draft['rows'], function ($row) use ($company) {
+                        $rowCompany = mb_strtolower(trim($row['profile']['company'] ?? ''));
+
+                        return ($rowCompany === 'vinh vinh phát' ? 'vvp' : $rowCompany) === $company;
+                    }));
                 }
 
                 return response()->json(['category' => [], 'salary' => [], 'salaryDetail' => [], 'attendance' => [], 'snapshot' => $draft, 'manager' => $salary]);

@@ -20,7 +20,7 @@ class PayrollPublicationController extends Controller
 
     private function validateKey(string $company, string $period): void
     {
-        validator(compact('company', 'period'), ['company' => 'required|in:vvp,a7a', 'period' => 'required|date_format:Y-m'])->validate();
+        validator(compact('company', 'period'), ['company' => 'required|in:vvp,a7a,all', 'period' => 'required|date_format:Y-m'])->validate();
     }
 
     public function save(Request $request, string $company, string $period)
@@ -52,7 +52,9 @@ class PayrollPublicationController extends Controller
             if ($employeeCompany === 'vinh vinh phát') {
                 $employeeCompany = 'vvp';
             }
-            abort_unless($employee && $employeeCompany === $company && ! isset($seen[$id]), 422, 'Nhân viên không khớp công ty hoặc bị trùng.');
+            abort_unless($employee && in_array($employeeCompany, ['vvp', 'a7a'], true)
+                && ($company === 'all' || $employeeCompany === $company)
+                && ! isset($seen[$id]), 422, 'Nhân viên không khớp công ty hoặc bị trùng.');
             $seen[$id] = true;
             $row['profile']['employeeId'] = $id;
             $row['profile']['attendanceEmployeeId'] = $id;
@@ -67,9 +69,18 @@ class PayrollPublicationController extends Controller
         unset($row);
 
         return DB::transaction(function () use ($company, $period, $month, $draft, $data) {
+            if ($company === 'all') {
+                abort_if(DB::table('salaries_manager')
+                    ->whereIn('calculator_key', ["vvp:$period", "a7a:$period"])
+                    ->where('status', 'published')->exists(), 409,
+                    'Kỳ này đã có bảng lương công ty được công bố. Cần đối soát trước khi chuyển sang kỳ lương tổng.');
+            } else {
+                abort_if(DB::table('salaries_manager')->where('calculator_key', "all:$period")->exists(), 409,
+                    'Kỳ này đã dùng bảng lương tổng. Vui lòng mở lại kỳ lương tổng để sửa.');
+            }
             // Unique key + row lock prevents duplicate periods and concurrent overwrites.
             DB::table('salaries_manager')->insertOrIgnore([
-                'calculator_key' => "$company:$period", 'title' => 'Lương '.strtoupper($company).' '.$period,
+                'calculator_key' => "$company:$period", 'title' => $company === 'all' ? 'Bảng lương '.$period : 'Lương '.strtoupper($company).' '.$period,
                 'start_date' => $draft['startDate'], 'end_date' => $draft['endDate'],
                 'date_show' => $month->copy()->addMonth()->startOfMonth()->toDateString(),
                 'status' => 'draft', 'revision' => 0, 'created_at' => now(), 'updated_at' => now(),
@@ -94,6 +105,16 @@ class PayrollPublicationController extends Controller
         return DB::transaction(function () use ($id, $request, $data) {
             $salary = DB::table('salaries_manager')->where('id', $id)->lockForUpdate()->first();
             abort_unless($salary && $salary->calculator_key, 404);
+            [$scope, $period] = explode(':', $salary->calculator_key, 2);
+            if ($scope !== 'all') {
+                abort_if(DB::table('salaries_manager')->where('calculator_key', "all:$period")->exists(), 409,
+                    'Kỳ này đã chuyển sang bảng lương tổng. Không công bố bản công ty cũ.');
+            } else {
+                abort_if(DB::table('salaries_manager')
+                    ->whereIn('calculator_key', ["vvp:$period", "a7a:$period"])
+                    ->where('status', 'published')->exists(), 409,
+                    'Kỳ này đã có bảng lương công ty được công bố.');
+            }
             abort_unless((int) $salary->revision === $data['revision'] && $salary->status === 'draft', 409, 'Bảng lương đã thay đổi; hãy tải lại để duyệt đúng bản.');
             abort_unless(DB::table('payroll_snapshots')->where('salary_id', $id)->exists(), 422);
             DB::table('salaries_manager')->where('id', $id)->update(['status' => 'published', 'published_at' => now(), 'published_by' => (string) $request->user()->getAuthIdentifier(), 'updated_at' => now()]);
