@@ -10,7 +10,9 @@ Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
         Route::get('/daily', [Cap7AController::class, 'daily']);
         Route::post('/daily/reset', [Cap7AController::class, 'resetDaily'])->middleware('throttle:6,1');
         Route::post('/commands', [Cap7AController::class, 'command'])->middleware('throttle:12,1');
-        Route::post('/screen-sessions', [Cap7AScreenController::class, 'issue'])->middleware('throttle:6,1');
+        // A Jetson reboot can make the FE renew several short-lived tickets while
+        // the gateway comes back. Keep a limit, but do not block that recovery.
+        Route::post('/screen-sessions', [Cap7AScreenController::class, 'issue'])->middleware('throttle:30,1');
     });
 
 // Gateway only: shared secret plus a short-lived, user-bound single-use ticket.

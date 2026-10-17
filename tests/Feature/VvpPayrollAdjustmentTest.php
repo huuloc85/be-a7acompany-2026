@@ -11,6 +11,35 @@ use Tests\TestCase;
 
 class VvpPayrollAdjustmentTest extends TestCase
 {
+    public function test_manual_attendance_roundtrip_and_restore(): void
+    {
+        $controller = new VvpPayrollAdjustmentController;
+        $entries = [['date' => '2026-09-01', 'day' => 8, 'night' => 0, 'overtime' => 2, 'overtimeShift' => 1]];
+        $controller->update($this->input(['attendanceOverrides' => $entries]), '2026-09', '001');
+        $rows = $controller->index($this->input(), '2026-09')->getData(true)['data'];
+        $this->assertEquals($entries, $rows[0]['adjustment']['attendanceOverrides']);
+        $this->assertEquals(1, $rows[0]['revision']);
+        $controller->update($this->input(['attendanceOverrides' => []], 1), '2026-09', '001');
+        $rows = $controller->index($this->input(), '2026-09')->getData(true)['data'];
+        $this->assertSame([], $rows[0]['adjustment']['attendanceOverrides']);
+    }
+
+    public function test_manual_attendance_rejects_more_than_24_hours(): void
+    {
+        $this->expectException(HttpException::class);
+        (new VvpPayrollAdjustmentController)->update($this->input(['attendanceOverrides' => [
+            ['date' => '2026-09-01', 'day' => 16, 'night' => 8, 'overtime' => 1, 'overtimeShift' => 1],
+        ]]), '2026-09', '001');
+    }
+
+    public function test_manual_attendance_rejects_date_outside_payroll_period(): void
+    {
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        (new VvpPayrollAdjustmentController)->update($this->input(['attendanceOverrides' => [
+            ['date' => '2026-09-16', 'day' => 8, 'night' => 0, 'overtime' => 0, 'overtimeShift' => 1],
+        ]]), '2026-09', '001');
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

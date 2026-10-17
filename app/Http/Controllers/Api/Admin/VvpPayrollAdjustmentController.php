@@ -32,7 +32,19 @@ class VvpPayrollAdjustmentController extends Controller
         }
         $rules['adjustment.noAttendanceConfirmed'] = 'sometimes|boolean';
         $rules['adjustment.note'] = 'sometimes|nullable|string|max:2000';
+        $start = \Carbon\Carbon::createFromFormat('!Y-m', $period)->subMonth()->day(16)->toDateString();
+        $end = \Carbon\Carbon::createFromFormat('!Y-m', $period)->day(15)->toDateString();
+        $rules['adjustment.attendanceOverrides'] = 'sometimes|array|max:31';
+        $rules['adjustment.attendanceOverrides.*'] = 'required|array:date,day,night,overtime,overtimeShift';
+        $rules['adjustment.attendanceOverrides.*.date'] = "required|date_format:Y-m-d|distinct|after_or_equal:$start|before_or_equal:$end";
+        foreach (['day', 'night', 'overtime'] as $field) {
+            $rules["adjustment.attendanceOverrides.*.$field"] = 'required|numeric|min:0|max:24|decimal:0,2';
+        }
+        $rules['adjustment.attendanceOverrides.*.overtimeShift'] = 'required|integer|in:1,2';
         $data = $request->validate($rules);
+        foreach ($data['adjustment']['attendanceOverrides'] ?? [] as $entry) {
+            abort_if($entry['day'] + $entry['night'] + $entry['overtime'] > 24, 422, 'Tổng giờ công trong ngày không được vượt 24.');
+        }
         // Store only explicitly supported fields; holiday days have their own API.
         $allowed = array_map(fn ($key) => substr($key, 11), array_filter(array_keys($rules), fn ($key) => str_starts_with($key, 'adjustment.')));
         $values = array_intersect_key($data['adjustment'], array_flip($allowed));
@@ -40,7 +52,7 @@ class VvpPayrollAdjustmentController extends Controller
             $values['note'] = $values['note'] ?? '';
         }
         foreach ($values as $key => $value) {
-            if ($key === 'note') {
+            if ($key === 'note' || $key === 'attendanceOverrides') {
                 continue;
             }
             $values[$key] = $key === 'noAttendanceConfirmed' ? (bool) $value : (float) $value;

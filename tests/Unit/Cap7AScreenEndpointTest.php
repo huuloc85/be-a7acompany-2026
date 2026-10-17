@@ -100,4 +100,31 @@ class Cap7AScreenEndpointTest extends TestCase
         $this->expectException(HttpException::class);
         $this->register('wss://test-name.trycloudflare.com/screen', str_repeat('x', 32));
     }
+
+    public function test_named_tunnel_uses_fixed_hostname_instead_of_cached_quick_url(): void
+    {
+        $sessions = new Cap7AScreenSessions;
+        Cache::put($sessions->endpointCacheKey(), 'wss://old-name.trycloudflare.com/screen', 90);
+        config(['cap7a.screen_dynamic_url' => false,
+            'cap7a.screen_ws_url' => 'wss://screen.a7atest.id.vn/screen']);
+        $user = new class
+        {
+            public function currentAccessToken()
+            {
+                $token = new PersonalAccessToken;
+                $token->id = 123;
+
+                return $token;
+            }
+
+            public function getAuthIdentifier()
+            {
+                return 456;
+            }
+        };
+        $response = $sessions->issue($user);
+        self::assertSame('wss://screen.a7atest.id.vn/screen', $response['websocket_url']);
+        self::assertTrue($response['view_only']);
+        self::assertSame(64, strlen($response['ticket']));
+    }
 }
