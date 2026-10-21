@@ -1,5 +1,7 @@
 # Cap7A integration — deployment required
 
+> Tài liệu single-device cũ: các API và biến môi trường bên dưới không còn áp dụng cho source TAIL/SPIKE mới. Dùng [cap7a-systems.md](cap7a-systems.md) để triển khai và [TAIL_HANDOFF.md](TAIL_HANDOFF.md) để cập nhật phía TAIL. Phần dưới chỉ giữ làm tham chiếu cơ chế cũ.
+
 Only authenticated Super Admin via existing Sanctum + token expiration + api.permission.
 No changes to existing auth/RBAC functions. New routes:
 

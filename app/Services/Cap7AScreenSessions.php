@@ -7,34 +7,36 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class Cap7AScreenSessions
 {
+    public function __construct(public readonly Cap7ASystem $system) {}
+
     public function enabled(): bool
     {
-        return config('cap7a.screen_enabled')
-            && (config('cap7a.screen_dynamic_url')
-                || preg_match('~^wss://[^?#@]+$~', config('cap7a.screen_ws_url') ?? ''))
-            && strlen(config('cap7a.screen_gateway_key') ?? '') >= 32;
+        return $this->system->config('screen_enabled')
+            && ($this->system->config('screen_dynamic_url')
+                || preg_match('~^wss://[^?#@]+$~', $this->system->config('screen_ws_url') ?? ''))
+            && strlen($this->system->config('screen_gateway_key') ?? '') >= 32;
     }
 
     public function issue($user): array
     {
         abort_unless($this->enabled(), 503, 'Chưa cấu hình gateway màn hình.');
-        $url = config('cap7a.screen_dynamic_url')
-            ? Cache::get($this->endpointCacheKey()) : config('cap7a.screen_ws_url');
+        $url = $this->system->config('screen_dynamic_url')
+            ? Cache::get($this->endpointCacheKey()) : $this->system->config('screen_ws_url');
         abort_unless($url, 503, 'Gateway chưa sẵn sàng; mở ứng dụng Cap7A trên Jetson và đợi tunnel kết nối.');
         $token = $user->currentAccessToken();
         abort_unless($token instanceof PersonalAccessToken, 403, 'Cần phiên đăng nhập bằng token.');
         $ticket = bin2hex(random_bytes(32));
         $hash = hash('sha256', $ticket);
         $actor = (string) $user->getAuthIdentifier();
-        $actorLock = Cache::lock('cap7a:screen:user-lock:'.$actor, 5);
+        $actorLock = Cache::lock($this->system->cachePrefix().'screen:user-lock:'.$actor, 5);
         abort_unless($actorLock->get(), 409);
         try {
-            Cache::put('cap7a:screen:'.$hash, [
+            Cache::put($this->system->cachePrefix().'screen:'.$hash, [
                 'token_id' => $token->id, 'actor' => $actor, 'issued_at' => time(),
                 'expires_at' => time() + 300, 'lease' => null,
             ], 300);
             // Issuing a new ticket revokes the previous viewer for this user.
-            Cache::put('cap7a:screen:user:'.$actor, $hash, 300);
+            Cache::put($this->system->cachePrefix().'screen:user:'.$actor, $hash, 300);
         } finally {
             $actorLock->release();
         }
@@ -47,17 +49,17 @@ class Cap7AScreenSessions
     {
         abort_unless($this->enabled(), 403);
         $hash = hash('sha256', $ticket);
-        $key = 'cap7a:screen:'.$hash;
+        $key = $this->system->cachePrefix().'screen:'.$hash;
         $lock = Cache::lock($key.':lock', 5);
         abort_unless($lock->get(), 409);
         $actorLock = null;
         try {
             $record = Cache::get($key);
             abort_unless(is_array($record) && $record['expires_at'] > time(), 403);
-            $candidateLock = Cache::lock('cap7a:screen:user-lock:'.$record['actor'], 5);
+            $candidateLock = Cache::lock($this->system->cachePrefix().'screen:user-lock:'.$record['actor'], 5);
             abort_unless($candidateLock->get(), 409);
             $actorLock = $candidateLock;
-            abort_unless(Cache::get('cap7a:screen:user:'.$record['actor']) === $hash, 403);
+            abort_unless(Cache::get($this->system->cachePrefix().'screen:user:'.$record['actor']) === $hash, 403);
             if ($opening) {
                 abort_unless($record['lease'] === null && time() - $record['issued_at'] <= 30, 403);
             } else {
@@ -74,7 +76,7 @@ class Cap7AScreenSessions
             // Sliding lease: the gateway must re-authorize periodically.
             $record['expires_at'] = time() + 300;
             Cache::put($key, $record, 300);
-            Cache::put('cap7a:screen:user:'.$record['actor'], $hash, 300);
+            Cache::put($this->system->cachePrefix().'screen:user:'.$record['actor'], $hash, 300);
 
             return ['allowed' => true, 'remaining_seconds' => 300, 'view_only' => true];
         } finally {
@@ -85,6 +87,6 @@ class Cap7AScreenSessions
 
     public function endpointCacheKey(): string
     {
-        return 'cap7a:screen:endpoint:'.hash('sha256', (string) config('cap7a.screen_gateway_key'));
+        return $this->system->cachePrefix().'screen:endpoint:'.hash('sha256', (string) $this->system->config('screen_gateway_key'));
     }
 }

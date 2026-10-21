@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Admin\Cap7AController;
 use App\Http\Controllers\Api\Admin\Cap7AScreenController;
 use App\Http\Middleware\API\CheckSuperAdmin;
 use App\Services\Cap7AScreenSessions;
+use App\Services\Cap7ASystem;
 use App\Services\Cap7AThingsBoard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,8 +22,8 @@ class Cap7AControlTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['cache.default' => 'array', 'cap7a.commands_enabled' => true,
-            'cap7a.device_id' => (string) Str::uuid()]);
+        config(['cache.default' => 'array', 'cap7a.systems.tail.commands_enabled' => true,
+            'cap7a.systems.tail.device_id' => (string) Str::uuid()]);
         Cache::flush();
         Log::spy();
     }
@@ -55,43 +56,46 @@ class Cap7AControlTest extends TestCase
 
     public function test_does_not_dispatch_offline_command(): void
     {
-        $service = Mockery::mock(Cap7AThingsBoard::class);
+        $service = Mockery::mock(Cap7AThingsBoard::class, [new Cap7ASystem('tail')]);
+        $this->app->bind(Cap7AThingsBoard::class, fn () => $service);
         $service->shouldReceive('status')->once()->andReturn(['online' => false]);
         $service->shouldNotReceive('command');
         $this->expectException(HttpException::class);
-        (new Cap7AController)->command($this->request((string) Str::uuid()), $service);
+        (new Cap7AController)->command($this->request((string) Str::uuid()), 'tail');
     }
 
     public function test_requires_local_permission(): void
     {
         $session = (string) Str::uuid();
-        $service = Mockery::mock(Cap7AThingsBoard::class);
+        $service = Mockery::mock(Cap7AThingsBoard::class, [new Cap7ASystem('tail')]);
+        $this->app->bind(Cap7AThingsBoard::class, fn () => $service);
         $service->shouldReceive('status')->andReturn(['online' => true,
             'state' => ['session_id' => $session, 'remote_allowed' => false]]);
         $service->shouldNotReceive('command');
         $this->expectException(HttpException::class);
-        (new Cap7AController)->command($this->request($session), $service);
+        (new Cap7AController)->command($this->request($session), 'tail');
     }
 
     public function test_deduplicates_command_before_dispatch(): void
     {
         $session = (string) Str::uuid();
         $request = $this->request($session);
-        $service = Mockery::mock(Cap7AThingsBoard::class);
+        $service = Mockery::mock(Cap7AThingsBoard::class, [new Cap7ASystem('tail')]);
+        $this->app->bind(Cap7AThingsBoard::class, fn () => $service);
         $service->shouldReceive('status')->twice()->andReturn(['online' => true,
             'state' => ['session_id' => $session, 'remote_allowed' => true]]);
         $service->shouldReceive('command')->once()->andReturnUsing(fn ($data) => [
             'ok' => true, 'request_id' => $data['request_id'], 'message' => 'STOP requested',
         ]);
-        self::assertSame(200, (new Cap7AController)->command($request, $service)->getStatusCode());
+        self::assertSame(200, (new Cap7AController)->command($request, 'tail')->getStatusCode());
         $this->expectException(HttpException::class);
-        (new Cap7AController)->command($request, $service);
+        (new Cap7AController)->command($request, 'tail');
     }
 
     public function test_screen_is_disabled_by_default(): void
     {
-        config(['cap7a.screen_enabled' => false]);
-        self::assertFalse((new Cap7AScreenSessions)->enabled());
+        config(['cap7a.systems.tail.screen_enabled' => false]);
+        self::assertFalse((new Cap7AScreenSessions(new Cap7ASystem('tail')))->enabled());
     }
 
     public function test_mode_changes_and_reset_do_not_require_stop(): void
@@ -101,12 +105,13 @@ class Cap7AControlTest extends TestCase
                 $session = (string) Str::uuid();
                 $request = $this->request($session);
                 $request->merge(['action' => $action]);
-                $service = Mockery::mock(Cap7AThingsBoard::class);
+                $service = Mockery::mock(Cap7AThingsBoard::class, [new Cap7ASystem('tail')]);
+                $this->app->bind(Cap7AThingsBoard::class, fn () => $service);
                 $service->shouldReceive('status')->once()->andReturn(['online' => true,
                     'state' => ['session_id' => $session, 'remote_allowed' => true, 'mode' => $mode]]);
                 $service->shouldReceive('command')->once()->withArgs(fn ($data) => $data['action'] === $action)
                     ->andReturnUsing(fn ($data) => ['ok' => true, 'request_id' => $data['request_id']]);
-                self::assertSame(200, (new Cap7AController)->command($request, $service)->getStatusCode());
+                self::assertSame(200, (new Cap7AController)->command($request, 'tail')->getStatusCode());
             }
         }
     }
@@ -118,12 +123,13 @@ class Cap7AControlTest extends TestCase
                 $session = (string) Str::uuid();
                 $request = $this->request($session);
                 $request->merge(['action' => $action, 'values' => ['threshold' => 50, 'roi' => [0, 0, 100, 100]]]);
-                $service = Mockery::mock(Cap7AThingsBoard::class);
+                $service = Mockery::mock(Cap7AThingsBoard::class, [new Cap7ASystem('tail')]);
+                $this->app->bind(Cap7AThingsBoard::class, fn () => $service);
                 $service->shouldReceive('status')->once()->andReturn(['online' => true,
                     'state' => ['session_id' => $session, 'remote_allowed' => true, 'mode' => $mode]]);
                 $service->shouldNotReceive('command');
                 try {
-                    (new Cap7AController)->command($request, $service);
+                    (new Cap7AController)->command($request, 'tail');
                     self::fail('Settings dispatched while '.$mode);
                 } catch (HttpException $error) {
                     self::assertSame(409, $error->getStatusCode());
@@ -134,10 +140,10 @@ class Cap7AControlTest extends TestCase
 
     public function test_screen_gateway_rejects_missing_secret(): void
     {
-        config(['cap7a.screen_gateway_key' => str_repeat('x', 32)]);
+        config(['cap7a.systems.tail.screen_gateway_key' => str_repeat('x', 32)]);
         $sessions = Mockery::mock(Cap7AScreenSessions::class);
         $sessions->shouldNotReceive('authorize');
         $this->expectException(HttpException::class);
-        (new Cap7AScreenController)->checkAccess(Request::create('/'), $sessions);
+        (new Cap7AScreenController)->checkAccess(Request::create('/'), 'tail');
     }
 }

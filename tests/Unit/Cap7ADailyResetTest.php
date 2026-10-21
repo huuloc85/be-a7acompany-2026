@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Services\Cap7ASystem;
 use App\Services\Cap7AThingsBoard;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -14,8 +15,8 @@ class Cap7ADailyResetTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['cache.default' => 'array', 'cap7a.enabled' => true, 'cap7a.api_key' => 'test-key',
-            'cap7a.device_id' => (string) Str::uuid(), 'cap7a.thingsboard_url' => 'https://tb.invalid']);
+        config(['cache.default' => 'array', 'cap7a.systems.tail.enabled' => true, 'cap7a.systems.tail.api_key' => 'test-key',
+            'cap7a.systems.tail.device_id' => (string) Str::uuid(), 'cap7a.systems.tail.thingsboard_url' => 'https://tb.invalid']);
         Cache::flush();
         Log::spy();
         Http::preventStrayRequests();
@@ -39,14 +40,14 @@ class Cap7ADailyResetTest extends TestCase
 
             return Http::response([]);
         });
-        $result = (new Cap7AThingsBoard)->resetDaily($date, 'admin');
+        $result = (new Cap7AThingsBoard(new Cap7ASystem('tail')))->resetDaily($date, 'admin');
         self::assertTrue($result['reset_pending']);
         self::assertIsInt($saved);
-        $reopened = (new Cap7AThingsBoard)->daily($date);
+        $reopened = (new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily($date);
         self::assertSame($saved, $reopened['reset_at_ms']);
         self::assertNull($reopened['report']);
         self::assertTrue($reopened['reset_pending']);
-        $again = (new Cap7AThingsBoard)->resetDaily($date, 'admin');
+        $again = (new Cap7AThingsBoard(new Cap7ASystem('tail')))->resetDaily($date, 'admin');
         self::assertGreaterThan($result['reset_at_ms'], $again['reset_at_ms']);
     }
 
@@ -54,7 +55,7 @@ class Cap7ADailyResetTest extends TestCase
     {
         $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
         try {
-            (new Cap7AThingsBoard)->resetDaily(now('Asia/Ho_Chi_Minh')->subDay()->toDateString(), 'admin');
+            (new Cap7AThingsBoard(new Cap7ASystem('tail')))->resetDaily(now('Asia/Ho_Chi_Minh')->subDay()->toDateString(), 'admin');
         } finally {
             Http::assertNothingSent();
         }
@@ -72,7 +73,7 @@ class Cap7ADailyResetTest extends TestCase
                     'ng' => 0, 'unconfirmed' => 0], range(0, 23)),
             ]]]]),
         ]);
-        $result = (new Cap7AThingsBoard)->daily($date);
+        $result = (new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily($date);
         self::assertFalse($result['reset_pending']);
         self::assertSame(2, $result['report']['ok']);
     }
@@ -82,6 +83,6 @@ class Cap7ADailyResetTest extends TestCase
         Http::fake(['*/values/attributes/*' => Http::response([]),
             '*/SHARED_SCOPE' => Http::response([], 403)]);
         $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
-        (new Cap7AThingsBoard)->resetDaily(now('Asia/Ho_Chi_Minh')->toDateString(), 'admin');
+        (new Cap7AThingsBoard(new Cap7ASystem('tail')))->resetDaily(now('Asia/Ho_Chi_Minh')->toDateString(), 'admin');
     }
 }

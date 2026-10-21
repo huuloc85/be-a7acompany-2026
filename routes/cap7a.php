@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\Admin\Cap7AScreenController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
-    ->prefix('cap7a')->group(function () {
+    ->prefix('cap7a/{system}')->where(['system' => 'tail|spike'])->group(function () {
         Route::get('/status', [Cap7AController::class, 'status']);
         Route::get('/daily', [Cap7AController::class, 'daily']);
         Route::post('/daily/reset', [Cap7AController::class, 'resetDaily'])->middleware('throttle:6,1');
@@ -16,5 +16,5 @@ Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
     });
 
 // Gateway only: shared secret plus a short-lived, user-bound single-use ticket.
-Route::post('/cap7a-screen/authorize', [Cap7AScreenController::class, 'checkAccess']);
-Route::post('/cap7a-screen/register', [Cap7AScreenController::class, 'registerEndpoint'])->middleware('throttle:10,1');
+Route::post('/cap7a/{system}/screen/authorize', [Cap7AScreenController::class, 'checkAccess'])->where('system', 'tail|spike');
+Route::post('/cap7a/{system}/screen/register', [Cap7AScreenController::class, 'registerEndpoint'])->where('system', 'tail|spike')->middleware('throttle:10,1');

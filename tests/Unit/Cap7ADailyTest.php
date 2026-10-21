@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Services\Cap7ASystem;
 use App\Services\Cap7AThingsBoard;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -12,8 +13,8 @@ class Cap7ADailyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['cap7a.enabled' => true, 'cap7a.api_key' => 'test-key',
-            'cap7a.device_id' => (string) Str::uuid(), 'cap7a.thingsboard_url' => 'https://tb.invalid']);
+        config(['cap7a.systems.tail.enabled' => true, 'cap7a.systems.tail.api_key' => 'test-key',
+            'cap7a.systems.tail.device_id' => (string) Str::uuid(), 'cap7a.systems.tail.thingsboard_url' => 'https://tb.invalid']);
         Http::preventStrayRequests();
         Http::fake(['*/values/attributes/SHARED_SCOPE*' => Http::response([])]);
     }
@@ -35,7 +36,7 @@ class Cap7ADailyTest extends TestCase
     public function test_daily_totals_and_quality_use_confirmed_outputs(): void
     {
         $this->fake($this->report());
-        $result = (new Cap7AThingsBoard)->daily('2026-10-15');
+        $result = (new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily('2026-10-15');
         self::assertTrue($result['available']);
         self::assertSame(11, $result['report']['total']);
         self::assertSame(80.0, $result['report']['ok_percent']);
@@ -46,7 +47,7 @@ class Cap7ADailyTest extends TestCase
     public function test_missing_history_is_not_zero_production(): void
     {
         Http::fake(['*/values/timeseries*' => Http::response([])]);
-        self::assertFalse((new Cap7AThingsBoard)->daily('2026-10-15')['available']);
+        self::assertFalse((new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily('2026-10-15')['available']);
     }
 
     public function test_no_classified_products_have_no_quality_percentage(): void
@@ -54,7 +55,7 @@ class Cap7ADailyTest extends TestCase
         $report = $this->report();
         $report['hours'][9]['ok'] = $report['hours'][9]['ng'] = 0;
         $this->fake($report);
-        self::assertNull((new Cap7AThingsBoard)->daily('2026-10-15')['report']['ok_percent']);
+        self::assertNull((new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily('2026-10-15')['report']['ok_percent']);
     }
 
     public function test_rejects_report_for_wrong_day(): void
@@ -63,7 +64,7 @@ class Cap7ADailyTest extends TestCase
         $report['date'] = '2026-10-14';
         $this->fake($report);
         $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
-        (new Cap7AThingsBoard)->daily('2026-10-15');
+        (new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily('2026-10-15');
     }
 
     public function test_rejects_negative_counters(): void
@@ -72,6 +73,6 @@ class Cap7ADailyTest extends TestCase
         $report['hours'][9]['ng'] = -1;
         $this->fake($report);
         $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
-        (new Cap7AThingsBoard)->daily('2026-10-15');
+        (new Cap7AThingsBoard(new Cap7ASystem('tail')))->daily('2026-10-15');
     }
 }

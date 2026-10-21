@@ -1,17 +1,23 @@
 <?php
 
-return [
-    'enabled' => env('CAP7A_ENABLED', false),
-    'commands_enabled' => env('CAP7A_COMMANDS_ENABLED', false),
-    'thingsboard_url' => env('CAP7A_TB_URL', 'https://eu.thingsboard.cloud'),
-    'device_id' => env('CAP7A_TB_DEVICE_ID'),
-    'api_key' => env('CAP7A_TB_API_KEY'),
-    // This is a ThingsBoard user with access to the device, NOT its MQTT token.
-    'username' => env('CAP7A_TB_USERNAME'),
-    'password' => env('CAP7A_TB_PASSWORD'),
-    'stale_seconds' => 20,
-    'screen_enabled' => env('CAP7A_SCREEN_ENABLED', false),
-    'screen_dynamic_url' => env('CAP7A_SCREEN_DYNAMIC_URL', false),
-    'screen_ws_url' => env('CAP7A_SCREEN_WS_URL'),
-    'screen_gateway_key' => env('CAP7A_SCREEN_GATEWAY_KEY'),
-];
+$systems = [];
+foreach (['tail', 'spike'] as $system) {
+    $prefix = 'CAP7A_'.strtoupper($system).'_';
+    $systems[$system] = [
+        'enabled' => env($prefix.'ENABLED', false),
+        'commands_enabled' => env($prefix.'COMMANDS_ENABLED', false),
+        'command_key' => $system === 'spike' ? env($prefix.'COMMAND_KEY') : null,
+        'thingsboard_url' => env($prefix.'TB_URL', 'https://eu.thingsboard.cloud'),
+        'device_id' => env($prefix.'TB_DEVICE_ID'),
+        'api_key' => env($prefix.'TB_API_KEY'),
+        'username' => env($prefix.'TB_USERNAME'),
+        'password' => env($prefix.'TB_PASSWORD'),
+        'stale_seconds' => 20,
+        'screen_enabled' => env($prefix.'SCREEN_ENABLED', false),
+        'screen_dynamic_url' => env($prefix.'SCREEN_DYNAMIC_URL', false),
+        'screen_ws_url' => env($prefix.'SCREEN_WS_URL'),
+        'screen_gateway_key' => env($prefix.'SCREEN_GATEWAY_KEY'),
+    ];
+}
+
+return ['systems' => $systems];
