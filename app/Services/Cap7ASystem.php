@@ -18,7 +18,7 @@ class Cap7ASystem
     {
         return [
             'commands' => true,
-            'daily' => $this->id === 'tail',
+            'daily' => true,
             'screen' => (new Cap7AScreenSessions($this))->enabled(),
             'threshold_unit' => $this->id === 'tail' ? 'percent' : 'grayscale',
         ];

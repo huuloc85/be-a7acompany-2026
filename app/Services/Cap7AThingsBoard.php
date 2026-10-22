@@ -167,6 +167,8 @@ class Cap7AThingsBoard
                 'total' => $classified + $totals['unconfirmed'],
                 'ok_percent' => $classified > 0 ? round(100 * $totals['ok'] / $classified, 2) : null,
                 'hours' => $report['hours'],
+                'partial' => ! empty($report['partial']),
+                'coverage_start_ms' => is_int($report['coverage_start_ms'] ?? null) ? $report['coverage_start_ms'] : null,
                 'warning' => ! empty($report['invalid_rows']) || ! empty($report['logger_dropped_session']) || ! empty($report['logger_error']),
             ])];
     }
