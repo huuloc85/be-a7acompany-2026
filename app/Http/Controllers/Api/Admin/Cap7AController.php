@@ -113,7 +113,8 @@ class Cap7AController extends Controller
                 abort_unless(($status['state']['remote_allowed'] ?? false) === true, 409, 'Người tại máy chưa cho phép điều khiển.');
             }
             if ($data['action'] === 'close_app') {
-                abort_unless(($status['state']['mode'] ?? null) === 'STOP', 409, 'Cần STOP trước khi thoát ứng dụng.');
+                abort_unless(in_array($status['state']['mode'] ?? null, ['STOP', 'RUN'], true),
+                    409, 'Kết thúc chế độ kiểm tra trước khi thoát từ web.');
             }
             if (in_array($data['action'], ['set_threshold', 'set_roi', 'clear_roi'], true)) {
                 abort_unless(($status['state']['mode'] ?? null) === 'STOP', 409, 'Cần STOP trước khi đổi cài đặt.');
