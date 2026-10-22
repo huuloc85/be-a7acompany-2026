@@ -75,6 +75,58 @@ class Cap7AThingsBoard
         return $response->json();
     }
 
+    public function launcherStatus(): array
+    {
+        abort_unless($this->system->id === 'tail', 404);
+        $device = $this->system->config('lifecycle_device_id');
+        $enabled = $this->configured() && $this->system->config('lifecycle_enabled')
+            && $this->system->config('commands_enabled') && Str::isUuid($device ?? '')
+            && $device !== $this->system->config('device_id')
+            && strlen((string) $this->system->config('lifecycle_key')) >= 32;
+        if (! $enabled) {
+            return ['enabled' => false, 'online' => false, 'state' => null];
+        }
+        $data = $this->request('get', '/api/plugins/telemetry/DEVICE/'.$device.'/values/timeseries',
+            ['keys' => 'cap7a_launcher,cap7a_launcher_online']);
+        $record = $data['cap7a_launcher'][0] ?? [];
+        $state = $record['value'] ?? null;
+        $state = is_string($state) ? json_decode($state, true) : $state;
+        $valid = is_array($state) && ($state['schema'] ?? null) === 1 && ($state['system'] ?? null) === 'tail'
+            && is_string($state['session_id'] ?? null) && Str::isUuid($state['session_id'])
+            && is_int($state['sampled_at_ms'] ?? null) && is_bool($state['app_running'] ?? null)
+            && is_bool($state['desktop_ready'] ?? null);
+        $online = $data['cap7a_launcher_online'][0] ?? [];
+        $now = now()->getTimestampMs();
+        $fresh = $valid && is_numeric($record['ts'] ?? null)
+            && $now - $record['ts'] >= -5000 && $now - $record['ts'] <= 15000
+            && $now - $state['sampled_at_ms'] >= -5000 && $now - $state['sampled_at_ms'] <= 15000
+            && in_array($online['value'] ?? null, [true, 'true'], true)
+            && ($online['ts'] ?? 0) >= $record['ts'];
+
+        return ['enabled' => true, 'online' => $fresh, 'state' => $valid ? [
+            'session_id' => $state['session_id'], 'sampled_at_ms' => $state['sampled_at_ms'],
+            'app_running' => $state['app_running'], 'desktop_ready' => $state['desktop_ready'],
+            'last_exit_code' => is_int($state['last_exit_code'] ?? null) ? $state['last_exit_code'] : null,
+        ] : null];
+    }
+
+    public function startApplication(array $command): array
+    {
+        abort_unless($this->system->id === 'tail' && $this->system->config('lifecycle_enabled')
+            && $this->system->config('commands_enabled'), 403);
+        $device = $this->system->config('lifecycle_device_id');
+        $key = (string) $this->system->config('lifecycle_key');
+        abort_unless(Str::isUuid($device ?? '') && $device !== $this->system->config('device_id')
+            && strlen($key) >= 32 && ($command['action'] ?? null) === 'start_app', 422);
+        $payload = json_encode($command + ['system' => 'tail'], JSON_THROW_ON_ERROR);
+
+        return $this->request('post', '/api/rpc/twoway/'.$device, [
+            'method' => 'cap7a.tail.lifecycle', 'params' => [
+                'payload' => $payload, 'signature' => hash_hmac('sha256', $payload, $key),
+            ], 'persistent' => false, 'timeout' => 5000, 'expirationTime' => $command['expires_at_ms'],
+        ]);
+    }
+
     public function status(): array
     {
         $metadata = ['system' => $this->system->id, 'capabilities' => $this->system->capabilities()];

@@ -20,4 +20,8 @@ foreach (['tail', 'spike'] as $system) {
     ];
 }
 
+$systems['tail']['lifecycle_enabled'] = env('CAP7A_TAIL_LIFECYCLE_ENABLED', false);
+$systems['tail']['lifecycle_device_id'] = env('CAP7A_TAIL_LIFECYCLE_DEVICE_ID');
+$systems['tail']['lifecycle_key'] = env('CAP7A_TAIL_LIFECYCLE_KEY');
+
 return ['systems' => $systems];

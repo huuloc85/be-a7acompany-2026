@@ -12,6 +12,44 @@ use Illuminate\Validation\Rule;
 
 class Cap7AController extends Controller
 {
+    public function launcherStatus()
+    {
+        $service = new Cap7AThingsBoard(new Cap7ASystem('tail'));
+
+        return response()->json($service->launcherStatus())->header('Cache-Control', 'no-store');
+    }
+
+    public function startApplication(Request $request)
+    {
+        $data = $request->validate([
+            'request_id' => ['required', 'uuid'], 'session_id' => ['required', 'uuid'],
+            'confirmed' => ['required', 'boolean', 'accepted'],
+        ]);
+        $service = new Cap7AThingsBoard(new Cap7ASystem('tail'));
+        $key = $service->system->cachePrefix();
+        $lock = Cache::lock($key.':command', 30);
+        abort_unless($lock->get(), 409, 'Một lệnh khác đang xử lý.');
+        try {
+            $launcher = $service->launcherStatus();
+            abort_unless($launcher['enabled'] && $launcher['online'], 409, 'Supervisor chưa sẵn sàng.');
+            $state = $launcher['state'];
+            abort_unless($state['session_id'] === $data['session_id'], 409, 'Phiên supervisor đã đổi; tải trạng thái mới.');
+            abort_unless($state['desktop_ready'] && ! $state['app_running'], 409, 'App đã mở hoặc desktop chưa sẵn sàng.');
+            abort_if($service->status()['online'], 409, 'Ứng dụng TAIL đang kết nối.');
+            abort_unless(Cache::add($key.':request:'.$data['request_id'], true, 86400), 409, 'Yêu cầu đã được xử lý; kiểm tra máy.');
+            $data += ['action' => 'start_app', 'expires_at_ms' => now()->getTimestampMs() + 5000];
+            Log::info('TAIL app start requested', ['actor' => $request->user()->getAuthIdentifier(), 'request_id' => $data['request_id']]);
+            $reply = $service->startApplication($data);
+            abort_unless(($reply['request_id'] ?? null) === $data['request_id'] && is_bool($reply['ok'] ?? null),
+                502, 'Phản hồi không khớp; kiểm tra trạng thái trước khi thử lại.');
+            Log::info('TAIL app start reply', ['request_id' => $data['request_id'], 'ok' => $reply['ok']]);
+
+            return response()->json($reply)->header('Cache-Control', 'no-store');
+        } finally {
+            $lock->release();
+        }
+    }
+
     public function tailLogs(Request $request)
     {
         $data = $request->validate(['date' => ['required', 'date_format:Y-m-d',
@@ -49,7 +87,7 @@ class Cap7AController extends Controller
         $data = $request->validate([
             'request_id' => ['required', 'uuid'],
             'session_id' => ['required', 'uuid'],
-            'action' => ['required', Rule::in(['ping', 'run', 'stop', 'test', 'reset_counters', 'set_threshold', 'set_roi', 'clear_roi'])],
+            'action' => ['required', Rule::in(['ping', 'run', 'stop', 'test', 'reset_counters', 'set_threshold', 'set_roi', 'clear_roi', 'close_app'])],
             'confirmed' => ['required', 'boolean', 'accepted'],
             'values' => ['sometimes', 'array:threshold,roi'],
             'values.threshold' => ['required_if:action,set_threshold', 'numeric', 'between:1,100'],
@@ -57,6 +95,9 @@ class Cap7AController extends Controller
             'values.roi.*' => ['integer', 'min:0', 'max:600'],
         ]);
         abort_unless($thingsboard->system->config('commands_enabled'), 403, 'Backend chưa bật điều khiển từ xa.');
+        if ($data['action'] === 'close_app') {
+            abort_unless($thingsboard->system->config('lifecycle_enabled'), 403, 'Backend chưa bật mở/thoát ứng dụng.');
+        }
         if ($data['action'] === 'set_roi') {
             [$x, $y, $w, $h] = $data['values']['roi'];
             abort_unless($w > 20 && $h > 20 && $x + $w <= 600 && $y + $h <= 400, 422, 'ROI ngoài khung 600×400.');
@@ -70,6 +111,9 @@ class Cap7AController extends Controller
             abort_unless(($status['state']['session_id'] ?? null) === $data['session_id'], 409, 'Ứng dụng đã khởi động lại; tải trạng thái mới.');
             if ($data['action'] !== 'ping') {
                 abort_unless(($status['state']['remote_allowed'] ?? false) === true, 409, 'Người tại máy chưa cho phép điều khiển.');
+            }
+            if ($data['action'] === 'close_app') {
+                abort_unless(($status['state']['mode'] ?? null) === 'STOP', 409, 'Cần STOP trước khi thoát ứng dụng.');
             }
             if (in_array($data['action'], ['set_threshold', 'set_roi', 'clear_roi'], true)) {
                 abort_unless(($status['state']['mode'] ?? null) === 'STOP', 409, 'Cần STOP trước khi đổi cài đặt.');
