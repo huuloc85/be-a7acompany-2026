@@ -4,6 +4,9 @@ use App\Http\Controllers\Api\Admin\Cap7AController;
 use App\Http\Controllers\Api\Admin\Cap7AScreenController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/cap7a/tail/logs', [Cap7AController::class, 'tailLogs'])
+    ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission', 'throttle:30,1']);
+
 Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
     ->prefix('cap7a/{system}')->where(['system' => 'tail|spike'])->group(function () {
         Route::get('/status', [Cap7AController::class, 'status']);

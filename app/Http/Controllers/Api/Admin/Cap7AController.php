@@ -12,6 +12,17 @@ use Illuminate\Validation\Rule;
 
 class Cap7AController extends Controller
 {
+    public function tailLogs(Request $request)
+    {
+        $data = $request->validate(['date' => ['required', 'date_format:Y-m-d',
+            'before_or_equal:'.now('Asia/Ho_Chi_Minh')->toDateString()]]);
+        $thingsboard = app()->makeWith(Cap7AThingsBoard::class, ['system' => new Cap7ASystem('tail')]);
+        $logs = Cache::remember($thingsboard->system->cachePrefix().'logs:'.$data['date'], 5,
+            fn () => $thingsboard->tailLogs($data['date']));
+
+        return response()->json($logs)->header('Cache-Control', 'no-store');
+    }
+
     public function status(string $system)
     {
         $thingsboard = app()->makeWith(Cap7AThingsBoard::class, ['system' => new Cap7ASystem($system)]);

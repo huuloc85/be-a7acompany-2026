@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -82,7 +83,7 @@ class Cap7AThingsBoard
                 'received_at_ms' => null, 'commands_enabled' => false];
         }
         $data = $this->request('get', '/api/plugins/telemetry/DEVICE/'.$this->system->config('device_id').'/values/timeseries',
-            ['keys' => 'cap7a_state,cap7a_online']);
+            ['keys' => 'cap7a_state,cap7a_online'.($this->system->id === 'spike' ? ',cap7a_logs' : '')]);
         $record = $data['cap7a_state'][0] ?? [];
         $state = $record['value'] ?? null;
         if (is_string($state)) {
@@ -102,8 +103,132 @@ class Cap7AThingsBoard
 
         return $metadata + ['configured' => true, 'online' => $isOnline, 'received_at_ms' => $received,
             'state' => $valid ? $state : null,
+            'app_logs' => $this->system->id === 'spike' ? $this->appLogs($data['cap7a_logs'][0] ?? null) : null,
             'commands_enabled' => (bool) $this->system->config('commands_enabled')
                 && ($this->system->id === 'tail' || strlen((string) $this->system->config('command_key')) >= 32)];
+    }
+
+    public function tailLogs(string $date): array
+    {
+        abort_unless($this->system->id === 'tail', 404);
+        $start = CarbonImmutable::createFromFormat('!Y-m-d', $date, 'Asia/Ho_Chi_Minh');
+        $data = $this->request('get', '/api/plugins/telemetry/DEVICE/'.$this->system->config('device_id').'/values/timeseries', [
+            'keys' => 'cap7a_app_log', 'startTs' => $start->getTimestampMs(),
+            'endTs' => $start->addDay()->getTimestampMs() - 1,
+            'agg' => 'NONE', 'orderBy' => 'DESC', 'limit' => 501,
+        ]);
+        $messages = [
+            'app_open' => ['info', 'Mở ứng dụng'], 'app_close' => ['info', 'Thoát ứng dụng'],
+            'worker_error' => ['error', 'Worker gặp lỗi; kiểm tra thông báo tại máy và nhật ký local.'],
+            'camera_read_failed' => ['error', 'Không lấy được ảnh camera'],
+            'camera_ready' => ['info', 'Camera sẵn sàng'], 'camera_unavailable' => ['warning', 'Camera chưa sẵn sàng'],
+            'model_ready' => ['info', 'Model sẵn sàng'], 'model_unavailable' => ['warning', 'Model chưa sẵn sàng'],
+            'worker_ready' => ['info', 'Worker đang hoạt động'], 'worker_stopped' => ['error', 'Worker đã dừng'],
+            'plc_ready' => ['info', 'PLC sẵn sàng'], 'plc_unavailable' => ['error', 'PLC chưa sẵn sàng'],
+            'mqtt_connected' => ['info', 'Đã kết nối MQTT'], 'mqtt_disconnected' => ['warning', 'Mất kết nối MQTT'],
+            'mode_run' => ['info', 'Chế độ chạy'], 'mode_stop' => ['info', 'Chế độ dừng'],
+            'mode_test' => ['info', 'Chế độ kiểm tra'], 'mode_file_test' => ['info', 'Chế độ kiểm tra ảnh'],
+            'screen_start_failed' => ['error', 'Không khởi động được màn hình từ xa'],
+            'log_dropped' => ['warning', 'Bộ đệm nhật ký đầy; một số sự kiện không được lưu.'],
+        ];
+        $records = $data['cap7a_app_log'] ?? [];
+        abort_unless(is_array($records), 502, 'Nhật ký không hợp lệ.');
+        $logs = [];
+        foreach (array_slice($records, 0, 500) as $record) {
+            if (! is_array($record)) {
+                continue;
+            }
+            $value = $record['value'] ?? null;
+            if (is_string($value)) {
+                $value = strlen($value) <= 4096 ? json_decode($value, true, 16) : null;
+            }
+            if (! is_array($value) || ($value['schema'] ?? null) !== 1
+                || ! is_string($value['code'] ?? null) || ! isset($messages[$value['code']])
+                || ! is_string($value['session_id'] ?? null) || ! Str::isUuid($value['session_id'])
+                || ! is_int($value['at_ms'] ?? null) || $value['at_ms'] <= 0
+                || $value['at_ms'] > 9007199254740991 || ! is_int($record['ts'] ?? null)) {
+                continue;
+            }
+            [$level, $message] = $messages[$value['code']];
+            $details = [];
+            foreach (['sdk_code', 'streak', 'count'] as $key) {
+                $number = is_array($value['details'] ?? null) ? ($value['details'][$key] ?? null) : null;
+                if (is_int($number) && $number >= -1 && $number <= 4294967295) {
+                    $details[$key] = $number;
+                }
+            }
+            $logs[] = ['id' => (string) $record['ts'], 'at_ms' => $value['at_ms'],
+                'session_id' => $value['session_id'], 'code' => $value['code'],
+                'level' => $level, 'message' => $message, 'details' => (object) $details];
+        }
+
+        return ['system' => 'tail', 'date' => $date, 'logs' => $logs, 'truncated' => count($records) > 500];
+    }
+
+    private function appLogs(mixed $record): ?array
+    {
+        // Fixed messages only: never reflect raw device logs or credentials into the API.
+        $catalog = [
+            'app_start' => ['info', 'Ứng dụng SPIKE khởi động.'],
+            'app_exit' => ['info', 'Ứng dụng đã thoát bình thường.'],
+            'app_crash' => ['error', 'Ứng dụng gặp lỗi nghiêm trọng. Kiểm tra log tại Jetson.'],
+            'app_lost' => ['error', 'Kênh giám sát kết thúc khi chưa nhận xác nhận thoát từ lõi SPIKE.'],
+            'app_restart' => ['warning', 'Watchdog yêu cầu tự khởi động lại ứng dụng.'],
+            'ui_error' => ['error', 'Giao diện hoặc kênh truyền ảnh không hoạt động bình thường.'],
+            'camera_ready' => ['info', 'Camera đã khởi động hoặc phục hồi.'],
+            'camera_error' => ['error', 'Camera lỗi lấy ảnh hoặc phục hồi. Kiểm tra camera và kết nối.'],
+            'camera_fallback' => ['warning', 'Chuyển phương án mở camera dự phòng.'],
+            'uart_ready' => ['info', 'UART/ESP32 đã mở hoặc kết nối lại.'],
+            'uart_error' => ['error', 'UART/ESP32 lỗi giao tiếp hoặc quá tải hàng đợi.'],
+            'mqtt_rejected' => ['error', 'MQTT từ chối kết nối. Kiểm tra host và thông tin xác thực.'],
+            'mqtt_offline' => ['warning', 'MQTT mất kết nối.'],
+            'mqtt_online' => ['info', 'MQTT đã kết nối.'],
+            'mqtt_error' => ['error', 'MQTT không gửi được dữ liệu hoặc tiến trình đã dừng.'],
+            'storage_error' => ['error', 'Không lưu hoặc đồng bộ được dữ liệu thống kê. Kiểm tra ổ đĩa và log tại máy.'],
+            'screen_ready' => ['info', 'Dịch vụ xem màn hình SPIKE đã sẵn sàng.'],
+            'screen_error' => ['warning', 'Dịch vụ xem màn hình không khởi động được; kiểm tra vẫn chạy tại máy.'],
+            'roi_warning' => ['warning', 'ROI đã lưu không hợp lệ; ứng dụng dùng giá trị mặc định.'],
+            'counter_day' => ['info', 'Bộ đếm đã chuyển sang ngày mới.'],
+            'rpc_rejected' => ['warning', 'Lệnh từ xa bị từ chối hoặc hết thời gian chờ. Kiểm tra máy trước khi thử lại.'],
+            'generic_error' => ['error', 'Ứng dụng báo lỗi. Xem log tại Jetson để biết chi tiết.'],
+        ];
+        if (! is_array($record) || ! is_int($record['ts'] ?? null)) {
+            return null;
+        }
+        $payload = $record['value'] ?? null;
+        if (is_string($payload)) {
+            if (strlen($payload) > 65536) {
+                return null;
+            }
+            $payload = json_decode($payload, true, 16);
+        }
+        if (! is_array($payload) || ($payload['schema'] ?? null) !== 1
+            || ! is_array($payload['events'] ?? null) || count($payload['events']) > 200) {
+            return null;
+        }
+        $events = [];
+        foreach ($payload['events'] as $event) {
+            if (! is_array($event) || ! is_string($event['code'] ?? null) || ! isset($catalog[$event['code']])) {
+                continue;
+            }
+            foreach (['id', 'at_ms', 'last_at_ms', 'count'] as $key) {
+                if (! is_int($event[$key] ?? null) || $event[$key] <= 0 || $event[$key] > 9007199254740991) {
+                    continue 2;
+                }
+            }
+            if ($event['last_at_ms'] < $event['at_ms'] || $event['last_at_ms'] > now()->getTimestampMs() + 300000) {
+                continue;
+            }
+            [$level, $message] = $catalog[$event['code']];
+            $events[] = ['id' => $event['id'], 'at_ms' => $event['at_ms'], 'last_at_ms' => $event['last_at_ms'],
+                'count' => $event['count'], 'observed' => ($event['observed'] ?? true) !== false,
+                'level' => $level, 'message' => $message];
+        }
+
+        return ['events' => array_reverse($events), 'received_at_ms' => $record['ts'],
+            'source_available' => ($payload['source_available'] ?? false) === true,
+            'storage_ok' => ($payload['storage_ok'] ?? false) === true,
+            'partial' => is_int($payload['skipped_bytes'] ?? null) && $payload['skipped_bytes'] > 0];
     }
 
     public function command(array $command): array
