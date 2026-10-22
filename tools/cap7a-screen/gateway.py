@@ -60,6 +60,7 @@ def settings():
             raise ValueError('FE origins must be exact HTTPS origins or HTTP loopback origins')
         parsed_origin.port  # Validate any explicit port before starting the service.
     return {'auth_url': url, 'key': key, 'origins': origins,
+            'vnc_password_file': os.environ.get('CAP7A_VNC_PASSWORD_FILE'),
             'vnc_port': int(os.environ.get('CAP7A_VNC_PORT', '5903'))}
 
 
@@ -98,10 +99,27 @@ async def screen(request):
             grant = await authorize(client, config, ticket, lease, True)
             deadline = lease_deadline(grant, started)
             reader, writer = await asyncio.wait_for(asyncio.open_connection('127.0.0.1', config['vnc_port']), 5)
+            password_file = config.get('vnc_password_file')
+            if password_file:
+                from vnc_auth import authenticate_vnc, authenticate_browser
+                await asyncio.wait_for(authenticate_vnc(reader, writer, password_file), 10)
             ws = web.WebSocketResponse(protocols=('binary',), max_msg_size=1024 * 1024, heartbeat=20)
             await ws.prepare(request)
+            initial = b''
+            if password_file:
+                initial = await asyncio.wait_for(authenticate_browser(ws), 10)
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError('Authorization lease expired during handshake')
+            if password_file:
+                # A slow handshake must not deliver frames after a logout/revocation.
+                started = asyncio.get_running_loop().time()
+                grant = await asyncio.wait_for(authorize(client, config, ticket, lease, False), deadline - started)
+                deadline = lease_deadline(grant, started)
 
             async def to_vnc():
+                if initial:
+                    writer.write(initial)
+                    await writer.drain()
                 async for msg in ws:
                     if msg.type != WSMsgType.BINARY:
                         break
@@ -122,7 +140,8 @@ async def screen(request):
                 error = task.exception()
                 print('Screen: disconnected:', task.get_name(),
                       type(error).__name__ if error else 'connection closed', flush=True)
-    except (TemporaryAuthError, ClientError, OSError, asyncio.TimeoutError) as error:
+    except (TemporaryAuthError, ClientError, OSError, asyncio.TimeoutError,
+            asyncio.IncompleteReadError, ValueError, ImportError) as error:
         print('Screen: connection failed:', type(error).__name__, flush=True)
         if ws is None:
             raise web.HTTPServiceUnavailable(text='Screen gateway unavailable')

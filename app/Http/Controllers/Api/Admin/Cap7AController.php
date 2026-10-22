@@ -87,7 +87,7 @@ class Cap7AController extends Controller
         $data = $request->validate([
             'request_id' => ['required', 'uuid'],
             'session_id' => ['required', 'uuid'],
-            'action' => ['required', Rule::in(['ping', 'run', 'stop', 'test', 'reset_counters', 'set_threshold', 'set_roi', 'clear_roi', 'close_app'])],
+            'action' => ['required', Rule::in(['ping', 'run', 'stop', 'test', 'reset_counters', 'reset_runtime', 'set_threshold', 'set_roi', 'clear_roi', 'close_app'])],
             'confirmed' => ['required', 'boolean', 'accepted'],
             'values' => ['sometimes', 'array:threshold,roi'],
             'values.threshold' => ['required_if:action,set_threshold', 'numeric', 'between:1,100'],
