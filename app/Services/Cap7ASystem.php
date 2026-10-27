@@ -32,6 +32,10 @@ class Cap7ASystem
 
     public function cachePrefix(): string
     {
+        if ($this->config('transport') === 'iot') {
+            return 'cap7a:'.$this->id.':iot:'.hash('sha256', (string) config('iot.url').'|'.(string) $this->config('device_id')).':';
+        }
+
         return 'cap7a:'.$this->id.':'.hash('sha256', (string) $this->config('thingsboard_url').'|'.(string) $this->config('device_id')).':';
     }
 }

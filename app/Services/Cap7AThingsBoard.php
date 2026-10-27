@@ -15,6 +15,11 @@ class Cap7AThingsBoard
 
     public function configured(): bool
     {
+        if ($this->system->config('transport') === 'iot') {
+            return (bool) $this->system->config('enabled')
+                && (new Cap7AIotTransport($this->system))->configured();
+        }
+
         return $this->system->config('enabled') && Str::isUuid($this->system->config('device_id') ?? '')
             && (trim((string) $this->system->config('api_key')) !== ''
                 || ($this->system->config('username') && $this->system->config('password')))
@@ -50,6 +55,12 @@ class Cap7AThingsBoard
 
     private function request(string $method, string $path, array $data, bool $emptyResponse = false): array
     {
+        if ($this->system->config('transport') === 'iot') {
+            abort_unless($this->configured(), 503, 'Chưa cấu hình dịch vụ IoT.');
+
+            return (new Cap7AIotTransport($this->system))->request($method, $path, $data, $emptyResponse);
+        }
+
         abort_unless($this->configured(), 503, 'Chưa cấu hình ThingsBoard cho Cap7A.');
         $apiKey = trim((string) $this->system->config('api_key'));
         $authorization = $apiKey !== '' ? 'ApiKey '.$apiKey : 'Bearer '.$this->token();
