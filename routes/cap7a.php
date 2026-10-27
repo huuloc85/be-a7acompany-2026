@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\Admin\Cap7AScreenController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/cap7a/tail/logs', [Cap7AController::class, 'tailLogs'])
-    ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission', 'throttle:30,1']);
+    ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission']);
 
 Route::get('/cap7a/tail/launcher', [Cap7AController::class, 'launcherStatus'])
     ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission']);

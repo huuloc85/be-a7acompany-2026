@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Services\Cap7AReadCache;
 use App\Services\Cap7ASystem;
 use App\Services\Cap7AThingsBoard;
 use Illuminate\Http\Request;
@@ -16,7 +17,9 @@ class Cap7AController extends Controller
     {
         $service = new Cap7AThingsBoard(new Cap7ASystem('tail'));
 
-        return response()->json($service->launcherStatus())->header('Cache-Control', 'no-store');
+        $data = (new Cap7AReadCache)->remember($service->system, 'launcher', 1, fn () => $service->launcherStatus());
+
+        return response()->json($data)->header('Cache-Control', 'no-store');
     }
 
     public function startApplication(Request $request)
@@ -55,17 +58,23 @@ class Cap7AController extends Controller
         $data = $request->validate(['date' => ['required', 'date_format:Y-m-d',
             'before_or_equal:'.now('Asia/Ho_Chi_Minh')->toDateString()]]);
         $thingsboard = app()->makeWith(Cap7AThingsBoard::class, ['system' => new Cap7ASystem('tail')]);
-        $logs = Cache::remember($thingsboard->system->cachePrefix().'logs:'.$data['date'], 5,
-            fn () => $thingsboard->tailLogs($data['date']));
+        $seconds = $data['date'] === now('Asia/Ho_Chi_Minh')->toDateString() ? 1 : 30;
+        $logs = $thingsboard->system->config('transport') === 'iot'
+            ? (new Cap7AReadCache)->remember($thingsboard->system, 'logs:'.$data['date'], $seconds,
+                fn () => $thingsboard->tailLogs($data['date']))
+            : Cache::remember($thingsboard->system->cachePrefix().'logs:'.$data['date'], 5,
+                fn () => $thingsboard->tailLogs($data['date']));
 
-        return response()->json($logs)->header('Cache-Control', 'no-store');
+        return $this->reportResponse($request, $logs);
     }
 
     public function status(string $system)
     {
         $thingsboard = app()->makeWith(Cap7AThingsBoard::class, ['system' => new Cap7ASystem($system)]);
 
-        return response()->json($thingsboard->status())->header('Cache-Control', 'no-store');
+        $data = (new Cap7AReadCache)->remember($thingsboard->system, 'status', 1, fn () => $thingsboard->status());
+
+        return response()->json($data)->header('Cache-Control', 'no-store');
     }
 
     public function daily(Request $request, string $system)
@@ -74,7 +83,11 @@ class Cap7AController extends Controller
         $data = $request->validate(['date' => ['required', 'date_format:Y-m-d',
             'before_or_equal:'.now('Asia/Ho_Chi_Minh')->toDateString()]]);
 
-        return response()->json($thingsboard->daily($data['date']))->header('Cache-Control', 'no-store');
+        $seconds = $data['date'] === now('Asia/Ho_Chi_Minh')->toDateString() ? 1 : 30;
+        $report = (new Cap7AReadCache)->remember($thingsboard->system, 'daily:'.$data['date'], $seconds,
+            fn () => $thingsboard->daily($data['date']));
+
+        return $this->reportResponse($request, $report);
     }
 
     public function command(Request $request, string $system)
@@ -145,8 +158,23 @@ class Cap7AController extends Controller
         $thingsboard = app()->makeWith(Cap7AThingsBoard::class, ['system' => new Cap7ASystem($system)]);
         $data = $request->validate(['date' => ['required', 'date_format:Y-m-d']]);
 
-        return response()->json($thingsboard->resetDaily($data['date'], (string) $request->user()->getAuthIdentifier()))
-            ->header('Cache-Control', 'no-store');
+        try {
+            return response()->json($thingsboard->resetDaily($data['date'], (string) $request->user()->getAuthIdentifier()))
+                ->header('Cache-Control', 'no-store');
+        } finally {
+            // Also invalidate on uncertain timeouts: reset may have reached the device.
+            (new Cap7AReadCache)->invalidate($thingsboard->system, 'daily:'.$data['date']);
+        }
+    }
+
+    private function reportResponse(Request $request, array $data)
+    {
+        $response = response()->json($data)->header('Cache-Control', 'private, no-cache, must-revalidate');
+        $response->setVary(['Authorization', 'Cookie']);
+        $response->setEtag(hash('sha256', $response->getContent()));
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     private function spikeCommand(Request $request)
