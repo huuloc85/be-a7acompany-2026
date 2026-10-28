@@ -47,7 +47,7 @@ class OvertimeApprovalService
             $actualHours = (float) (in_array($row['hnhc'], ['TC', 'LN'], true)
                 ? $row['total_hours'] : $row['overtime_hours']);
             $defaultHours = ! in_array($row['hnhc'], ['TC', 'LN'], true)
-                && in_array((int) ($row['calendar_category_id'] ?? 0), [2, 3, 6], true)
+                && in_array((int) ($row['calendar_category_id'] ?? 0), [2, 3, 5, 6], true)
                 ? min(1.0, max(0.0, $actualHours)) : 0.0;
             $requiresApprovalHours = $applicable ? max(0.0, $actualHours - $defaultHours) : 0.0;
 

@@ -8,15 +8,11 @@ use Carbon\Carbon;
 class AttendanceRequestService
 {
     /** Attach current request statuses without changing attendance or payroll. */
-    public function annotate(array $rows): array
+    public function annotate(array $rows, string $employeeId, string $employeeName, string $startDate, string $endDate): array
     {
-        if ($rows === []) {
-            return [];
-        }
-
         // Do not filter by submitted_at: a request may be submitted in an earlier month.
         $requests = RequestForm::query()
-            ->whereIn('employee_id', array_unique(array_column($rows, 'employee_id')))
+            ->where('employee_id', $employeeId)
             ->whereIn('type', [RequestForm::TYPE_DON_XIN_NGHI_PHEP, RequestForm::TYPE_DON_XIN_DI_TRE_VE_SOM])
             ->orderBy('id')
             ->get(['id', 'employee_id', 'type', 'form_data', 'status', 'rejection_reason'])
@@ -43,6 +39,40 @@ class AttendanceRequestService
             })
             ->filter(fn ($item) => $item['from'] && $item['to'] && $item['from'] <= $item['to'])
             ->groupBy('employee_id');
+
+        // Display-only rows: never pass these through attendance/payroll calculations.
+        $existingDates = array_fill_keys(array_map(fn ($row) => substr((string) $row['date'], 0, 10), $rows), true);
+        foreach ($requests->get($employeeId, collect()) as $item) {
+            if ($item['request']['type'] !== RequestForm::TYPE_DON_XIN_NGHI_PHEP) {
+                continue;
+            }
+            $from = max($startDate, $item['from']);
+            $to = min($endDate, $item['to']);
+            for ($day = Carbon::parse($from); $day->format('Y-m-d') <= $to; $day->addDay()) {
+                $date = $day->format('Y-m-d');
+                if (isset($existingDates[$date])) {
+                    continue;
+                }
+                $rows[] = [
+                    'employee_id' => $employeeId,
+                    'name' => $employeeName,
+                    'company' => null,
+                    'calendar_category_id' => null,
+                    'date' => $date,
+                    'shift' => 0,
+                    'hnhc' => null,
+                    'day_type' => '',
+                    'is_schedule_change' => false,
+                    'time_in' => null,
+                    'time_out' => null,
+                    'total_hours' => 0,
+                    'overtime_hours' => 0,
+                    'administrative_hours' => 0,
+                ];
+                $existingDates[$date] = true;
+            }
+        }
+        usort($rows, fn ($a, $b) => strcmp($a['date'], $b['date']));
 
         return array_map(function ($row) use ($requests) {
             $date = substr((string) $row['date'], 0, 10);
