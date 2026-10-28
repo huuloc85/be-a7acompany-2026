@@ -26,5 +26,8 @@ $systems['tail']['lifecycle_enabled'] = env('CAP7A_TAIL_LIFECYCLE_ENABLED', fals
 $systems['tail']['lifecycle_device_id'] = env('CAP7A_TAIL_TRANSPORT', 'thingsboard') === 'iot'
     ? env('CAP7A_TAIL_IOT_LIFECYCLE_DEVICE_ID') : env('CAP7A_TAIL_LIFECYCLE_DEVICE_ID');
 $systems['tail']['lifecycle_key'] = env('CAP7A_TAIL_LIFECYCLE_KEY');
+$systems['spike']['lifecycle_enabled'] = env('CAP7A_SPIKE_LIFECYCLE_ENABLED', false);
+$systems['spike']['lifecycle_device_id'] = env('CAP7A_SPIKE_IOT_LIFECYCLE_DEVICE_ID');
+$systems['spike']['lifecycle_key'] = env('CAP7A_SPIKE_LIFECYCLE_KEY');
 
 return ['systems' => $systems];

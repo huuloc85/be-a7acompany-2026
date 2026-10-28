@@ -22,7 +22,7 @@ class Cap7AIotTransport
     public function request(string $method, string $path, array $data, bool $emptyResponse = false): array
     {
         $allowed = array_filter([$this->system->config('device_id'),
-            $this->system->id === 'tail' ? $this->system->config('lifecycle_device_id') : null]);
+            $this->system->config('lifecycle_device_id')]);
         $device = null;
         $resource = null;
         if (preg_match('~^/api/plugins/telemetry/DEVICE/([^/]+)/(values/timeseries|values/attributes/SHARED_SCOPE|SHARED_SCOPE)$~', $path, $match)) {

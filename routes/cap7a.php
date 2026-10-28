@@ -11,6 +11,10 @@ Route::get('/cap7a/tail/launcher', [Cap7AController::class, 'launcherStatus'])
     ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission']);
 Route::post('/cap7a/tail/launcher/start', [Cap7AController::class, 'startApplication'])
     ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission', 'throttle:4,1,tail-launcher-start:']);
+Route::get('/cap7a/spike/launcher', [Cap7AController::class, 'launcherStatus'])->defaults('system', 'spike')
+    ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission']);
+Route::post('/cap7a/spike/launcher/start', [Cap7AController::class, 'startApplication'])->defaults('system', 'spike')
+    ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission', 'throttle:4,1,spike-launcher-start:']);
 
 Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
     ->prefix('cap7a/{system}')->where(['system' => 'tail|spike'])->group(function () {

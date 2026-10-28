@@ -13,24 +13,24 @@ use Illuminate\Validation\Rule;
 
 class Cap7AController extends Controller
 {
-    public function launcherStatus()
+    public function launcherStatus(string $system = 'tail')
     {
-        $service = new Cap7AThingsBoard(new Cap7ASystem('tail'));
+        $service = new Cap7AThingsBoard(new Cap7ASystem($system));
 
         $data = (new Cap7AReadCache)->remember($service->system, 'launcher', 1, fn () => $service->launcherStatus());
 
         return response()->json($data)->header('Cache-Control', 'no-store');
     }
 
-    public function startApplication(Request $request)
+    public function startApplication(Request $request, string $system = 'tail')
     {
         $data = $request->validate([
             'request_id' => ['required', 'uuid'], 'session_id' => ['required', 'uuid'],
             'confirmed' => ['required', 'boolean', 'accepted'],
         ]);
-        $service = new Cap7AThingsBoard(new Cap7ASystem('tail'));
+        $service = new Cap7AThingsBoard(new Cap7ASystem($system));
         $key = $service->system->cachePrefix();
-        $lock = Cache::lock($key.':command', 30);
+        $lock = Cache::lock($key.($system === 'tail' ? ':command' : 'command'), 30);
         abort_unless($lock->get(), 409, 'Một lệnh khác đang xử lý.');
         try {
             $launcher = $service->launcherStatus();
@@ -38,14 +38,14 @@ class Cap7AController extends Controller
             $state = $launcher['state'];
             abort_unless($state['session_id'] === $data['session_id'], 409, 'Phiên supervisor đã đổi; tải trạng thái mới.');
             abort_unless($state['desktop_ready'] && ! $state['app_running'], 409, 'App đã mở hoặc desktop chưa sẵn sàng.');
-            abort_if($service->status()['online'], 409, 'Ứng dụng TAIL đang kết nối.');
+            abort_if($service->status()['online'], 409, 'Ứng dụng '.strtoupper($system).' đang kết nối.');
             abort_unless(Cache::add($key.':request:'.$data['request_id'], true, 86400), 409, 'Yêu cầu đã được xử lý; kiểm tra máy.');
             $data += ['action' => 'start_app', 'expires_at_ms' => now()->getTimestampMs() + 5000];
-            Log::info('TAIL app start requested', ['actor' => $request->user()->getAuthIdentifier(), 'request_id' => $data['request_id']]);
+            Log::info('Cap7A app start requested', ['system' => $system, 'actor' => $request->user()->getAuthIdentifier(), 'request_id' => $data['request_id']]);
             $reply = $service->startApplication($data);
             abort_unless(($reply['request_id'] ?? null) === $data['request_id'] && is_bool($reply['ok'] ?? null),
                 502, 'Phản hồi không khớp; kiểm tra trạng thái trước khi thử lại.');
-            Log::info('TAIL app start reply', ['request_id' => $data['request_id'], 'ok' => $reply['ok']]);
+            Log::info('Cap7A app start reply', ['system' => $system, 'request_id' => $data['request_id'], 'ok' => $reply['ok']]);
 
             return response()->json($reply)->header('Cache-Control', 'no-store');
         } finally {
@@ -187,7 +187,7 @@ class Cap7AController extends Controller
             'revision' => ['required', 'integer', 'min:0', 'max:2147483646'],
             'confirmed' => ['required', 'boolean', 'accepted'],
             'action' => ['required', Rule::in(['calibrate', 'back', 'page', 'select', 'adjust',
-                'threshold_view', 'reset_params', 'reset_counters', 'move_roi', 'save_roi', 'reset_roi'])],
+                'threshold_view', 'reset_params', 'reset_counters', 'move_roi', 'save_roi', 'reset_roi', 'close_app'])],
             'values' => ['sometimes', 'array:page,index,direction,edge,dx,dy'],
             'values.page' => ['required_if:action,page', Rule::in(['vision', 'roi'])],
             'values.index' => ['required_if:action,select', 'integer', 'between:0,2'],
@@ -209,7 +209,11 @@ class Cap7AController extends Controller
             abort_unless(is_string($controls['core_session'] ?? null)
                 && ($controls['revision'] ?? null) === (int) $data['revision'], 409, 'Cài đặt đã thay đổi; tải lại trạng thái.');
             $cal = ! empty($controls['calibration']);
-            if ($data['action'] === 'calibrate' || $data['action'] === 'reset_counters') {
+            if ($data['action'] === 'close_app') {
+                abort_unless($context->config('transport') === 'iot' && $context->config('lifecycle_enabled'),
+                    403, 'Backend chưa bật mở/thoát ứng dụng SPIKE.');
+            }
+            if (in_array($data['action'], ['calibrate', 'reset_counters', 'close_app'], true)) {
                 abort_if($cal, 409, 'Thoát cài đặt trước khi thao tác.');
             } else {
                 abort_unless($cal, 409, 'Cần vào cài đặt SPIKE.');

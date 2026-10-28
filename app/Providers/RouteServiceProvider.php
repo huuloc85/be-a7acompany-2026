@@ -27,7 +27,7 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             // Separate each polling endpoint from the ordinary API/RPC budget.
             if ($request->isMethod('GET') && preg_match(
-                '~^api/cap7a/(?:(?:tail|spike)/(?:status|daily)|tail/(?:launcher|logs))$~',
+                '~^api/cap7a/(?:(?:tail|spike)/(?:status|daily|launcher)|tail/logs)$~',
                 $request->path()
             )) {
                 return Limit::perMinute(120)->by('cap7a-read:'.$request->path().':'.($request->user()?->id ?: $request->ip()));
