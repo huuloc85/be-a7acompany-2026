@@ -72,6 +72,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         return;
     }
     Route::post('/auth/check', [AuthController::class, 'authCheck']);
+    Route::post('/employee-preview', [\App\Http\Controllers\Api\Admin\EmployeePreviewController::class, 'store'])->middleware('throttle:5,1');
+    Route::post('/employee-preview/stop', [\App\Http\Controllers\Api\Admin\EmployeePreviewController::class, 'destroy']);
     Route::get('/onboarding/progress/{guide}', [\App\Http\Controllers\Api\OnboardingProgressController::class, 'show']);
     Route::put('/onboarding/progress/{guide}', [\App\Http\Controllers\Api\OnboardingProgressController::class, 'update']);
     Route::post('/auth/confirm-login', [AuthController::class, 'authConfirmLogin']);

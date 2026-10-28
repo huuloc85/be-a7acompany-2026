@@ -19,8 +19,11 @@ class AttachBearerToken
         $token = $request->cookie('auth_token');
 
         // if the token is not null, set it in the Authorization header
-        if ($token) {
+        if ($token && ! $request->bearerToken()) {
             $request->headers->set('Authorization', 'Bearer '.$token);
+        }
+        if (str_starts_with($request->bearerToken() ?? '', \App\Services\EmployeePreviewService::PREFIX)) {
+            return app(EmployeePreview::class)->handle($request, $next);
         }
 
         return $next($request);

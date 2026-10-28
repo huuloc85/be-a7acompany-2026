@@ -15,6 +15,9 @@ class LogActivity
 
     public static function logViewActivity($user, $activityType, $description)
     {
+        if (request()->attributes->get('employee_preview')) {
+            return;
+        }
         $date = Carbon::now()->format('Y-m-d');
         $currentMonthYear = Carbon::now()->format('Y-m');
         $loginHistory = LoginHistory::where('employee_id', $user->id)
@@ -40,6 +43,9 @@ class LogActivity
 
     public static function logRoleSpecificLoginActivity($user, $activityType, $description)
     {
+        if (request()->attributes->get('employee_preview')) {
+            return;
+        }
         // Mảng các role cần theo dõi
         $trackedRoles = [15, 16, 17];
         // Kiểm tra nếu role_id của người dùng không nằm trong mảng trackedRoles
