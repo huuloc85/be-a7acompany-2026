@@ -47,35 +47,18 @@ class Cap7AMailSettingsController extends Controller
             422, 'Cần cấu hình dịch vụ gửi email thật trên máy chủ.');
         $generatedAt = now('Asia/Ho_Chi_Minh');
         $date = $generatedAt->toDateString();
-        $totals = ['ok' => 0, 'ng' => 0, 'unconfirmed' => 0, 'total' => 0];
-        $lines = ['BÁO CÁO TỔNG SẢN LƯỢNG CAP7A', 'Ngày: '.$generatedAt->format('d/m/Y'),
-            'Lập lúc: '.$generatedAt->format('H:i:s').' (giờ Việt Nam)',
-            'Số liệu trong ngày tính đến lần cập nhật gần nhất của từng Screen.', ''];
-        foreach (['tail' => 'Screen 1', 'spike' => 'Screen 2'] as $system => $label) {
+        $cameras = [];
+        foreach (['tail' => 'Camera kiểm tra điểm thiếu nhựa', 'spike' => 'Camera kiểm tra cổng keo cao'] as $system => $label) {
             $source = app()->makeWith(Cap7AThingsBoard::class, ['system' => new Cap7ASystem($system)]);
             $daily = $source->daily($date);
             abort_unless($daily['available'] && ! $daily['reset_pending'], 422,
                 $label.' chưa có báo cáo ngày. Chưa gửi email tổng sản lượng.');
-            $report = $daily['report'];
-            $lines[] = $label;
-            foreach ($totals as $field => $value) {
-                $totals[$field] += $report[$field];
-            }
-            $lines[] = 'OK: '.$report['ok'].' | NG: '.$report['ng'].' | Chưa xác nhận: '.$report['unconfirmed'].' | Tổng: '.$report['total'];
-            if ($daily['received_at_ms']) {
-                $lines[] = 'Cập nhật: '.\Carbon\CarbonImmutable::createFromTimestampMs($daily['received_at_ms'])
-                    ->setTimezone('Asia/Ho_Chi_Minh')->format('d/m/Y H:i:s');
-            }
-            if ($daily['reset_at_ms'] > 0 || $report['partial'] || $report['warning']) {
-                $lines[] = 'Lưu ý: Số liệu có thể chưa đầy đủ hoặc đã được đặt lại trong ngày.';
-            }
-            $lines[] = '';
+            $cameras[] = ['label' => $label, 'daily' => $daily];
         }
-        $lines[] = 'TỔNG HAI SCREEN';
-        $lines[] = 'OK: '.$totals['ok'].' | NG: '.$totals['ng'].' | Chưa xác nhận: '.$totals['unconfirmed'].' | Tổng: '.$totals['total'];
         try {
-            Mail::raw(implode("\n", $lines),
-                fn ($mail) => $mail->bcc($recipients)->subject('Báo cáo tổng sản lượng CAP7A · '.$generatedAt->format('d/m/Y')));
+            Mail::send(['html' => 'mail.cap7a-daily-report', 'text' => 'mail.cap7a-daily-report-text'],
+                compact('generatedAt', 'cameras'),
+                fn ($mail) => $mail->bcc($recipients)->subject('Báo cáo sản lượng CAP7A · '.$generatedAt->format('d/m/Y')));
         } catch (Throwable $error) {
             report($error);
             abort(502, 'Chưa xác nhận được kết quả gửi. Kiểm tra hộp thư trước khi gửi lại để tránh trùng thư.');
