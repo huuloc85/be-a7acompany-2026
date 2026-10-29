@@ -5,11 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Báo cáo sản lượng CAP7A</title>
         <style>
-            @media only screen and (max-width: 600px) {
+            @media only screen and (max-width: 640px) {
                 .camera-column {
                     display: block !important;
                     width: 100% !important;
                     box-sizing: border-box !important;
+                    padding: 12px !important;
                 }
             }
         </style>
@@ -38,6 +39,9 @@
                                     CAP7A · BÁO CÁO NGÀY
                                 </p>
                                 <h1 style="margin: 0; font-size: 22px; line-height: 1.3">Sản lượng kiểm tra</h1>
+                                <p style="margin: 6px 0 0; font-size: 12px; color: #526176">
+                                    {{ $generatedAt->format('d/m/Y · H:i:s') }}
+                                </p>
                             </td>
                         </tr>
                         <tr>
@@ -63,20 +67,28 @@
                                                     width="100%"
                                                     cellpadding="0"
                                                     cellspacing="0"
-                                                    style="border-collapse: collapse; font-size: 15px">
+                                                    style="
+                                                        border-collapse: collapse;
+                                                        table-layout: fixed;
+                                                        width: 100%;
+                                                        font-size: 14px;
+                                                        line-height: 1.5;
+                                                        overflow-wrap: anywhere;
+                                                        word-wrap: break-word;
+                                                    ">
                                                     <thead>
                                                         <tr style="background: #f3f5f8">
                                                             <th
                                                                 scope="col"
                                                                 align="left"
                                                                 style="padding: 8px 10px; color: #526176">
-                                                                Kết quả
+                                                                Chỉ tiêu
                                                             </th>
                                                             <th
                                                                 scope="col"
                                                                 align="right"
                                                                 style="padding: 8px 10px; color: #526176">
-                                                                Số lượng
+                                                                Giá trị
                                                             </th>
                                                         </tr>
                                                     </thead>

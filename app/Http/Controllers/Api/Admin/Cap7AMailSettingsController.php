@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Services\Cap7ADailyStarts;
 use App\Services\Cap7AMailRecipients;
 use App\Services\Cap7AMailSettings;
 use App\Services\Cap7ASystem;
@@ -64,7 +65,7 @@ class Cap7AMailSettingsController extends Controller
         try {
             Mail::send(['html' => 'mail.cap7a-daily-report', 'text' => 'mail.cap7a-daily-report-text'],
                 compact('generatedAt', 'cameras'),
-                fn ($mail) => $mail->bcc($recipients)->subject('Báo cáo sản lượng CAP7A · '.$generatedAt->format('d/m/Y')));
+                fn ($mail) => $mail->bcc($recipients)->subject('Báo cáo sản lượng CAP7A · '.$generatedAt->format('d/m/Y H:i:s')));
         } catch (Throwable $error) {
             report($error);
             abort(502, 'Chưa xác nhận được kết quả gửi. Kiểm tra hộp thư trước khi gửi lại để tránh trùng thư.');
@@ -77,7 +78,8 @@ class Cap7AMailSettingsController extends Controller
     {
         $shiftStart = \Carbon\CarbonImmutable::parse($date.' 07:00:00', 'Asia/Ho_Chi_Minh')->getTimestampMs();
         $cursor = $start;
-        $first = null;
+        $starts = new Cap7ADailyStarts;
+        $first = $starts->first($source->system, $date);
         $last = null;
         $latestStart = null;
         $run = null;
@@ -102,6 +104,7 @@ class Cap7AMailSettingsController extends Controller
                     && (! is_int($exited) || $exited <= 0 || $exited >= $start)) {
                     if ($began >= $shiftStart) {
                         $first = min($first ?? $end, $began);
+                        $starts->record($source->system, $began);
                     }
                     $latestStart = max($latestStart ?? 0, $began);
                     if (is_int($exited) && $exited >= max($start, $began) && $exited <= $end) {
@@ -124,9 +127,12 @@ class Cap7AMailSettingsController extends Controller
         // The live screen reads the latest snapshot even when history is unavailable.
         // Never use this snapshot to infer the first session of the day.
         $snapshot = $source->status();
+        // A camera can publish while we fetch history or the other camera.
+        // Accept that update, but never include timestamps from another day.
+        $snapshotEnd = min(now()->getTimestampMs(), \Carbon\CarbonImmutable::parse($date, 'Asia/Ho_Chi_Minh')->endOfDay()->getTimestampMs());
         $state = $snapshot['state'] ?? null;
         $received = $snapshot['received_at_ms'] ?? null;
-        if (is_array($state) && is_numeric($received) && $received >= $start && $received <= $end) {
+        if (is_array($state) && is_numeric($received) && $received >= $start && $received <= $snapshotEnd) {
             $snapshotDate = ($state['runtime_date'] ?? null) ?: null;
             $snapshotDate ??= \Carbon\CarbonImmutable::createFromTimestampMs($received)
                 ->setTimezone('Asia/Ho_Chi_Minh')->toDateString();
@@ -141,9 +147,9 @@ class Cap7AMailSettingsController extends Controller
             }
             $began = $state['app_started_at_ms'] ?? null;
             $exited = $state['app_exited_at_ms'] ?? null;
-            if (is_numeric($began) && $began > 0 && $began <= $end) {
+            if (is_numeric($began) && $began > 0 && $began <= $snapshotEnd) {
                 $latestStart = max($latestStart ?? 0, (int) $began);
-                if (is_numeric($exited) && $exited >= max($start, $began) && $exited <= $end) {
+                if (is_numeric($exited) && $exited >= max($start, $began) && $exited <= $snapshotEnd) {
                     $last = max($last ?? 0, (int) $exited);
                 }
             }
@@ -160,10 +166,10 @@ class Cap7AMailSettingsController extends Controller
         };
 
         return [
-            'Bắt đầu' => $time($first),
-            'Kết thúc' => $latestStart !== null && ($last === null || $latestStart > $last) ? 'Chưa kết thúc' : $time($last),
-            'Thời gian kiểm' => $duration($run),
-            'Thời gian dừng kiểm' => $duration($stop),
+            'Mở ứng dụng' => $time($first),
+            'Thoát ứng dụng' => $latestStart !== null && ($last === null || $latestStart > $last) ? 'Chưa kết thúc' : $time($last),
+            'Thời gian chạy hôm nay' => $duration($run),
+            'Thời gian dừng hôm nay' => $duration($stop),
         ];
     }
 
