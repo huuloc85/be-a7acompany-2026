@@ -30,4 +30,10 @@ $systems['spike']['lifecycle_enabled'] = env('CAP7A_SPIKE_LIFECYCLE_ENABLED', fa
 $systems['spike']['lifecycle_device_id'] = env('CAP7A_SPIKE_IOT_LIFECYCLE_DEVICE_ID');
 $systems['spike']['lifecycle_key'] = env('CAP7A_SPIKE_LIFECYCLE_KEY');
 
-return ['systems' => $systems];
+return [
+    'systems' => $systems,
+    'production_mail' => [
+        'enabled' => env('CAP7A_PRODUCTION_MAIL_ENABLED', false),
+        'recipient' => env('CAP7A_PRODUCTION_MAIL_TO', 'huulocng0805@gmail.com'),
+    ],
+];

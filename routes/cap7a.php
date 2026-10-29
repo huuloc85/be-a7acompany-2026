@@ -1,8 +1,16 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\Cap7AController;
+use App\Http\Controllers\Api\Admin\Cap7AMailSettingsController;
 use App\Http\Controllers\Api\Admin\Cap7AScreenController;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware(['auth:sanctum', 'check.token.expiration', 'api.permission'])
+    ->prefix('cap7a/production-mail')->group(function () {
+        Route::get('/settings', [Cap7AMailSettingsController::class, 'show']);
+        Route::post('/test', [Cap7AMailSettingsController::class, 'sendTest'])->middleware('throttle:2,1');
+        Route::put('/settings', [Cap7AMailSettingsController::class, 'update'])->middleware('throttle:10,1');
+    });
 
 Route::get('/cap7a/tail/logs', [Cap7AController::class, 'tailLogs'])
     ->middleware(['auth:sanctum', 'check.token.expiration', 'api.permission']);

@@ -173,6 +173,16 @@ class Cap7AThingsBoard
                 && ($this->system->id === 'tail' || strlen((string) $this->system->config('command_key')) >= 32)];
     }
 
+    public function reportStateRecords(int $start, int $end): array
+    {
+        $data = $this->request('get', '/api/plugins/telemetry/DEVICE/'.$this->system->config('device_id').'/values/timeseries', [
+            'keys' => 'cap7a_state', 'startTs' => $start, 'endTs' => $end,
+            'agg' => 'NONE', 'orderBy' => 'ASC', 'limit' => 1000,
+        ]);
+
+        return $data['cap7a_state'] ?? [];
+    }
+
     public function tailLogs(string $date): array
     {
         abort_unless($this->system->id === 'tail', 404);
