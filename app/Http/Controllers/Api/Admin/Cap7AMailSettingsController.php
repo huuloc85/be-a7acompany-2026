@@ -82,6 +82,7 @@ class Cap7AMailSettingsController extends Controller
         $latestStart = null;
         $run = null;
         $stop = null;
+        $runtimeTimestamp = 0;
         for ($page = 0; $page < 100; $page++) {
             $records = $source->reportStateRecords($cursor, $end);
             $lastTimestamp = $cursor - 1;
@@ -111,6 +112,7 @@ class Cap7AMailSettingsController extends Controller
                     // These are daily cumulative counters, not per-sample durations.
                     $run = $state['run_seconds'] ?? null;
                     $stop = $state['stop_seconds'] ?? null;
+                    $runtimeTimestamp = $ts;
                 }
             }
             if (count($records) < 1000 || $lastTimestamp >= $end) {
@@ -118,6 +120,33 @@ class Cap7AMailSettingsController extends Controller
             }
             abort_if($page === 99, 422, 'Lịch sử camera quá dài. Chưa gửi báo cáo.');
             $cursor = $lastTimestamp + 1;
+        }
+        // The live screen reads the latest snapshot even when history is unavailable.
+        // Never use this snapshot to infer the first session of the day.
+        $snapshot = $source->status();
+        $state = $snapshot['state'] ?? null;
+        $received = $snapshot['received_at_ms'] ?? null;
+        if (is_array($state) && is_numeric($received) && $received >= $start && $received <= $end) {
+            $snapshotDate = ($state['runtime_date'] ?? null) ?: null;
+            $snapshotDate ??= \Carbon\CarbonImmutable::createFromTimestampMs($received)
+                ->setTimezone('Asia/Ho_Chi_Minh')->toDateString();
+            if ($snapshotDate === $date && $received >= $runtimeTimestamp) {
+                foreach (['run_seconds' => &$run, 'stop_seconds' => &$stop] as $key => &$value) {
+                    $seconds = $state[$key] ?? null;
+                    if (is_numeric($seconds) && $seconds >= 0 && $seconds <= 86400) {
+                        $value = $seconds;
+                    }
+                }
+                unset($value);
+            }
+            $began = $state['app_started_at_ms'] ?? null;
+            $exited = $state['app_exited_at_ms'] ?? null;
+            if (is_numeric($began) && $began > 0 && $began <= $end) {
+                $latestStart = max($latestStart ?? 0, (int) $began);
+                if (is_numeric($exited) && $exited >= max($start, $began) && $exited <= $end) {
+                    $last = max($last ?? 0, (int) $exited);
+                }
+            }
         }
         $time = fn ($ms) => $ms === null ? 'Chưa ghi nhận' : \Carbon\CarbonImmutable::createFromTimestampMs($ms)
             ->setTimezone('Asia/Ho_Chi_Minh')->format('H:i:s d/m');
