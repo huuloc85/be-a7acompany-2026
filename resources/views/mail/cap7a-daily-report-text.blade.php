@@ -13,4 +13,3 @@ Việt Nam)
         Lưu ý: Số liệu có thể chưa đầy đủ hoặc đã được đặt lại trong ngày.
     @endif
 @endforeach
-Số liệu theo lần cập nhật gần nhất của từng camera trong ngày, không cộng gộp giữa các camera.
