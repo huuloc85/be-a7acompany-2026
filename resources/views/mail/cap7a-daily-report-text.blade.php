@@ -3,7 +3,7 @@ Việt Nam)
 
 @foreach ($cameras as $camera)
     {{ $camera['label'] }}
-    @foreach (['ok' => 'OK', 'ng' => 'NG', 'unconfirmed' => 'Chưa xác nhận', 'total' => 'Tổng kiểm tra'] as $key => $label)
+    @foreach (['ok' => 'OK', 'ng' => 'NG', 'total' => 'Tổng kiểm tra'] as $key => $label)
             {{ $label }}: {{ number_format($camera['daily']['report'][$key], 0, ',', '.') }}
     @endforeach
 

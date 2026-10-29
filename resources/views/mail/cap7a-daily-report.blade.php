@@ -81,7 +81,7 @@
                                                         </tr>
                                                     </thead>
                                                     <tbody>
-                                                        @foreach (['ok' => 'OK', 'ng' => 'NG', 'unconfirmed' => 'Chưa xác nhận', 'total' => 'Tổng kiểm tra'] as $key => $label)
+                                                        @foreach (['ok' => 'OK', 'ng' => 'NG', 'total' => 'Tổng kiểm tra'] as $key => $label)
                                                             <tr>
                                                                 <th
                                                                     scope="row"
