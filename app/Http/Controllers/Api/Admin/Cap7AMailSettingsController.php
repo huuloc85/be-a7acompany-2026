@@ -53,7 +53,13 @@ class Cap7AMailSettingsController extends Controller
             $daily = $source->daily($date);
             abort_unless($daily['available'] && ! $daily['reset_pending'], 422,
                 $label.' chưa có báo cáo ngày. Chưa gửi email tổng sản lượng.');
-            $cameras[] = ['label' => $label, 'daily' => $daily];
+            $timing = $this->dailyTiming($source, $generatedAt->copy()->startOfDay()->getTimestampMs(), $generatedAt->getTimestampMs(), $date);
+            $percent = $daily['report']['ok_percent'];
+            $details = [
+                'Tỷ lệ OK' => $percent === null ? '—' : number_format($percent, 2, ',', '.').'%',
+                'Tỷ lệ NG' => $percent === null ? '—' : number_format(100 - $percent, 2, ',', '.').'%',
+            ] + $timing;
+            $cameras[] = ['label' => $label, 'daily' => $daily, 'details' => $details];
         }
         try {
             Mail::send(['html' => 'mail.cap7a-daily-report', 'text' => 'mail.cap7a-daily-report-text'],
@@ -65,6 +71,71 @@ class Cap7AMailSettingsController extends Controller
         }
 
         return response()->json(['message' => 'Đã chuyển báo cáo tổng sản lượng đến dịch vụ gửi thư. Vui lòng kiểm tra hộp thư và thư rác.']);
+    }
+
+    private function dailyTiming(Cap7AThingsBoard $source, int $start, int $end, string $date): array
+    {
+        $shiftStart = \Carbon\CarbonImmutable::parse($date.' 07:00:00', 'Asia/Ho_Chi_Minh')->getTimestampMs();
+        $cursor = $start;
+        $first = null;
+        $last = null;
+        $latestStart = null;
+        $run = null;
+        $stop = null;
+        for ($page = 0; $page < 100; $page++) {
+            $records = $source->reportStateRecords($cursor, $end);
+            $lastTimestamp = $cursor - 1;
+            foreach ($records as $record) {
+                $ts = $record['ts'] ?? null;
+                abort_unless(is_int($ts) && $ts >= $cursor && $ts >= $lastTimestamp && $ts <= $end,
+                    502, 'Lịch sử thời gian camera không hợp lệ.');
+                $lastTimestamp = $ts;
+                $state = $record['value'] ?? null;
+                $state = is_string($state) ? json_decode($state, true) : $state;
+                if (! is_array($state) || ($state['schema'] ?? null) !== 1) {
+                    continue;
+                }
+                $began = $state['app_started_at_ms'] ?? null;
+                $exited = $state['app_exited_at_ms'] ?? null;
+                if (is_int($began) && $began > 0 && $began <= $end
+                    && (! is_int($exited) || $exited <= 0 || $exited >= $start)) {
+                    if ($began >= $shiftStart) {
+                        $first = min($first ?? $end, $began);
+                    }
+                    $latestStart = max($latestStart ?? 0, $began);
+                    if (is_int($exited) && $exited >= max($start, $began) && $exited <= $end) {
+                        $last = max($last ?? 0, $exited);
+                    }
+                }
+                if (($state['runtime_date'] ?? null) === $date) {
+                    // These are daily cumulative counters, not per-sample durations.
+                    $run = $state['run_seconds'] ?? null;
+                    $stop = $state['stop_seconds'] ?? null;
+                }
+            }
+            if (count($records) < 1000 || $lastTimestamp >= $end) {
+                break;
+            }
+            abort_if($page === 99, 422, 'Lịch sử camera quá dài. Chưa gửi báo cáo.');
+            $cursor = $lastTimestamp + 1;
+        }
+        $time = fn ($ms) => $ms === null ? 'Chưa ghi nhận' : \Carbon\CarbonImmutable::createFromTimestampMs($ms)
+            ->setTimezone('Asia/Ho_Chi_Minh')->format('H:i:s d/m');
+        $duration = function ($seconds) {
+            if (! is_numeric($seconds) || $seconds < 0 || $seconds > 86400) {
+                return 'Chưa ghi nhận';
+            }
+            $seconds = (int) $seconds;
+
+            return sprintf('%02d:%02d:%02d', intdiv($seconds, 3600), intdiv($seconds % 3600, 60), $seconds % 60);
+        };
+
+        return [
+            'Bắt đầu' => $time($first),
+            'Kết thúc' => $latestStart !== null && ($last === null || $latestStart > $last) ? 'Chưa kết thúc' : $time($last),
+            'Thời gian kiểm' => $duration($run),
+            'Thời gian dừng kiểm' => $duration($stop),
+        ];
     }
 
     private function respond(array $settings)

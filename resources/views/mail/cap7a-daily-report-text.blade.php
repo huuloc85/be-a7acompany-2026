@@ -7,6 +7,10 @@ Việt Nam)
             {{ $label }}: {{ number_format($camera['daily']['report'][$key], 0, ',', '.') }}
     @endforeach
 
+    @foreach ($camera['details'] as $label => $value)
+        {{ $label }}: {{ $value }}
+    @endforeach
+
     Cập nhật:
     {{ $camera['daily']['received_at_ms'] ? \Carbon\CarbonImmutable::createFromTimestampMs($camera['daily']['received_at_ms'])->setTimezone('Asia/Ho_Chi_Minh')->format('d/m/Y H:i:s') : 'Chưa có thời điểm cập nhật' }}
     @if ($camera['daily']['reset_at_ms'] > 0 || $camera['daily']['report']['partial'] || $camera['daily']['report']['warning'])

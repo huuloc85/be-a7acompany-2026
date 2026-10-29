@@ -105,6 +105,30 @@
                                                                 </td>
                                                             </tr>
                                                         @endforeach
+
+                                                        @foreach ($camera['details'] as $label => $value)
+                                                            <tr>
+                                                                <th
+                                                                    scope="row"
+                                                                    align="left"
+                                                                    style="
+                                                                        padding: 6px 10px;
+                                                                        border-bottom: 1px solid #e5eaf0;
+                                                                        font-weight: normal;
+                                                                    ">
+                                                                    {{ $label }}
+                                                                </th>
+                                                                <td
+                                                                    align="right"
+                                                                    style="
+                                                                        padding: 6px 10px;
+                                                                        border-bottom: 1px solid #e5eaf0;
+                                                                        font-weight: bold;
+                                                                    ">
+                                                                    {{ $value }}
+                                                                </td>
+                                                            </tr>
+                                                        @endforeach
                                                     </tbody>
                                                 </table>
                                                 <p
