@@ -44,6 +44,8 @@ class PayrollPublicationController extends Controller
         $draft = $data['draft'];
         $excelValues = ($draft['importMode'] ?? null) === 'excel-values';
         if ($excelValues) {
+            // Nested validation filters out snapshot metadata; validate the complete Excel snapshot below.
+            $draft = $request->input('draft');
             \App\Support\PayrollExcelValues::validate($draft);
         }
         $month = Carbon::createFromFormat('!Y-m', $period);
