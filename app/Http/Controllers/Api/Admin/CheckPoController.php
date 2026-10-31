@@ -44,9 +44,9 @@ class CheckPoController extends Controller
                 // Determine created_at if status == 1 and shift is set
                 if ($status == 1 && $shift !== null) {
                     if ($shift == 1) {
-                        $created_at = $date . ' 19:30:00';
+                        $created_at = $date.' 19:30:00';
                     } else {
-                        $created_at = date('Y-m-d', strtotime($date . ' +1 day')) . ' 07:30:00';
+                        $created_at = date('Y-m-d', strtotime($date.' +1 day')).' 07:30:00';
                     }
                 }
 
@@ -68,7 +68,7 @@ class CheckPoController extends Controller
                         'status' => $status,
                     ],
                     [
-                        'totalQuan' => DB::raw('COALESCE(totalQuan,0)+' . $quantity),
+                        'totalQuan' => DB::raw('COALESCE(totalQuan,0)+'.$quantity),
                     ]
                 );
 
@@ -80,7 +80,7 @@ class CheckPoController extends Controller
                         'status' => $status,
                     ],
                     [
-                        'totalQuan' => DB::raw('COALESCE(totalQuan,0)+' . $quantity),
+                        'totalQuan' => DB::raw('COALESCE(totalQuan,0)+'.$quantity),
                     ]
                 );
 
@@ -297,7 +297,7 @@ class CheckPoController extends Controller
 
     public function getPoHistory(Request $request)
     {
-        $month = $request->input('month') ? Carbon::createFromFormat('Y-m', $request->input('month')) : Carbon::now();
+        $month = $request->input('month') ? Carbon::createFromFormat('!Y-m', $request->input('month')) : Carbon::now();
 
         $dailyQuantities = DailyQuantityPO::whereYear('date', $month->year)
             ->whereMonth('date', $month->month)
