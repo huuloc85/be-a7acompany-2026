@@ -28,6 +28,7 @@ class PayrollPublicationController extends Controller
         abort_unless(VvpPayrollProfile::canEdit($request->user()), 403);
         $this->validateKey($company, $period);
         $rules = ['revision' => 'required|integer|min:0', 'draft' => 'required|array',
+            'draft.importMode' => 'sometimes|in:excel-values',
             'draft.startDate' => 'required|date_format:Y-m-d', 'draft.endDate' => 'required|date_format:Y-m-d',
             'draft.rows' => 'required|array|min:1|max:2000', 'draft.rules' => 'required|array',
             'draft.rows.*.profile' => 'required|array', 'draft.rows.*.profile.employeeId' => 'required|string',
@@ -41,6 +42,10 @@ class PayrollPublicationController extends Controller
         }
         $data = $request->validate($rules);
         $draft = $data['draft'];
+        $excelValues = ($draft['importMode'] ?? null) === 'excel-values';
+        if ($excelValues) {
+            \App\Support\PayrollExcelValues::validate($draft);
+        }
         $month = Carbon::createFromFormat('!Y-m', $period);
         abort_unless($draft['startDate'] === $month->copy()->subMonth()->day(16)->toDateString()
             && $draft['endDate'] === $month->copy()->day(15)->toDateString(), 422, 'Kỳ công không khớp tháng lương.');
@@ -56,6 +61,11 @@ class PayrollPublicationController extends Controller
                 && ($company === 'all' || $employeeCompany === $company)
                 && ! isset($seen[$id]), 422, 'Nhân viên không khớp công ty hoặc bị trùng.');
             $seen[$id] = true;
+            if ($excelValues) {
+                $normalize = fn ($name) => mb_strtolower(preg_replace('/\s+/u', ' ', trim($name)));
+                abort_unless($normalize($employee->name) === $normalize($row['profile']['name'])
+                    && $employeeCompany === mb_strtolower(trim($row['profile']['company'])), 422, 'Tên hoặc công ty nhân viên không khớp Excel.');
+            }
             $row['profile']['employeeId'] = $id;
             $row['profile']['attendanceEmployeeId'] = $id;
             $row['profile']['name'] = $employee->name;
@@ -64,7 +74,9 @@ class PayrollPublicationController extends Controller
             $gross = array_sum(array_map(fn ($key) => $row[$key], ['daySalary', 'nightSalary', 'dayOvertimeSalary', 'nightOvertimeSalary', 'reinforcementSalary', 'housing', 'travel', 'meal', 'holidaySalary', 'paidLeaveSalary', 'downtimeSalary', 'menstrualSalary', 'diligence']))
                 + $row['adjustments']['bonus'] + $row['adjustments']['referral'] + $row['adjustments']['otherIncome'];
             $net = $gross - $row['union'] - $row['social'] - $row['health'] - $row['unemployment'] - $row['tax'] - $row['adjustments']['advance'] - $row['adjustments']['otherDeduction'];
-            abort_unless(abs($gross - $row['gross']) < 1 && abs($net - $row['net']) < 1, 422, 'Tổng thu nhập hoặc thực lãnh không khớp.');
+            if (! $excelValues) {
+                abort_unless(abs($gross - $row['gross']) < 1 && abs($net - $row['net']) < 1, 422, 'Tổng thu nhập hoặc thực lãnh không khớp.');
+            }
         }
         unset($row);
 
@@ -88,6 +100,15 @@ class PayrollPublicationController extends Controller
             $salary = DB::table('salaries_manager')->where('calculator_key', "$company:$period")->lockForUpdate()->first();
             abort_unless($salary->status === 'draft', 409, 'Bảng lương đã công bố; không thể ghi đè.');
             abort_unless((int) $salary->revision === $data['revision'], 409, 'Bản nháp đã thay đổi. Tải lại trước khi lưu.');
+            if (($draft['importMode'] ?? null) === 'excel-values') {
+                $previous = DB::table('payroll_snapshots')->where('salary_id', $salary->id)->first();
+                if ($previous) {
+                    $saved = \Illuminate\Support\Facades\Storage::disk('local')->put(
+                        'payroll-draft-backups/'.$salary->id.'-'.$salary->revision.'.json', $previous->draft
+                    );
+                    abort_unless($saved, 500, 'Chưa sao lưu được bản nháp cũ. Chưa thay dữ liệu.');
+                }
+            }
             DB::table('payroll_snapshots')->updateOrInsert(['salary_id' => $salary->id], ['draft' => json_encode($draft, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)]);
             DB::table('payroll_snapshot_members')->where('salary_id', $salary->id)->delete();
             DB::table('payroll_snapshot_members')->insert(array_map(fn ($row) => ['salary_id' => $salary->id, 'employee_id' => $row['profile']['employeeId']], $draft['rows']));
