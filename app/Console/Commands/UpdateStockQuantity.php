@@ -3,11 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Models\Product;
-use App\Models\TotalDailyQuantityPO;
 use App\Models\TotalMonthQuantity;
+use App\Services\ProductInventoryService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -18,7 +17,10 @@ class UpdateStockQuantity extends Command
      *
      * @var string
      */
-    protected $signature = 'update-stock-quantity:cron';
+    protected $signature = 'update-stock-quantity:cron
+        {--from= : Tháng bắt đầu tính lại (MM-YYYY), giữ nguyên tồn đầu tháng này}
+        {--product= : Chỉ tính lại sản phẩm có ID này}
+        {--dry-run : Xem thay đổi, không ghi dữ liệu}';
 
     /**
      * The console command description.
@@ -30,100 +32,58 @@ class UpdateStockQuantity extends Command
     /**
      * Execute the console command.
      */
-    public function handle(Request $request)
+    public function handle(ProductInventoryService $inventory): int
     {
-        try {
-            DB::beginTransaction();
-            $previousMonth = Carbon::now()->subMonth()->startOfMonth();
-            $listProductId = Product::all()->pluck('id');
-            $month = Carbon::now()->format('m-Y');
-            $count = 0;
-            $count200 = 0;
-            $countMOQ = 0;
-            foreach ($listProductId as $productId) {
-                $stockQuan200 = TotalMonthQuantity::where('product_id', $productId)->where('month', $month)->where('status', 5)->first();
-                $stockQuan = TotalMonthQuantity::where('product_id', $productId)->where('month', $month)->where('status', 4)->first();
-                $stockMOQ = TotalMonthQuantity::where('product_id', $productId)->where('month', $month)->where('status', 7)->first();
-                // dd($stockQuan200);
-                if ($stockQuan200 == null) {
-                    // thực hiện tính lại tồn đầu kỳ 200%
-                    $lastStockQuan200 = TotalMonthQuantity::where('product_id', $productId)
-                        ->where('status', 5)
-                        ->whereMonth('created_at', $previousMonth->month)
-                        ->whereYear('created_at', $previousMonth->year)
-                        ->value('totalQuan');
+        $from = $this->option('from') ?: Carbon::now()->startOfMonth()->subMonth()->format('m-Y');
+        if (! preg_match('/^(0[1-9]|1[0-2])-\d{4}$/', $from)
+            || Carbon::createFromFormat('!m-Y', $from)->gte(Carbon::now()->startOfMonth())) {
+            $this->error('Tháng bắt đầu phải có dạng MM-YYYY và trước tháng hiện tại.');
 
-                    $laseTotalChecked = TotalMonthQuantity::where('product_id', $productId)
-                        ->where('status', 2)
-                        ->whereMonth('created_at', $previousMonth->month)
-                        ->whereYear('created_at', $previousMonth->year)
-                        ->value('totalQuan');
-
-                    $laseTotalExport = $this->previousMonthPoExportQuantity($productId, $previousMonth);
-                    // dd($laseTotalChecked, $laseTotalChecked, $laseTotalExport);
-                    $newStockQuan200 = new TotalMonthQuantity;
-                    $newStockQuan200->product_id = $productId;
-                    $newStockQuan200->status = 5;
-                    $newStockQuan200->month = $month;
-                    $newStockQuan200->totalQuan = ($lastStockQuan200 + $laseTotalChecked) - $laseTotalExport;
-                    // dd($newStockQuan200);
-                    $newStockQuan200->save();
-                    $count200++;
-                }
-
-                if ($stockQuan == null) {
-                    // thực hiện tính lại tồn đầu kỳ
-                    $oldStockQuan = TotalMonthQuantity::where('product_id', $productId)
-                        ->where('status', 4)  // tồn đầu kỳ
-                        ->whereMonth('created_at', $previousMonth->month)
-                        ->whereYear('created_at', $previousMonth->year)
-                        ->value('totalQuan');
-
-                    $prorealityQuan = TotalMonthQuantity::where('product_id', $productId)
-                        ->where('status', 1)  // sản xuất gần nhất
-                        ->whereMonth('created_at', $previousMonth->month)
-                        ->whereYear('created_at', $previousMonth->year)
-                        ->value('totalQuan');
-
-                    $laseTotalExport = $this->previousMonthPoExportQuantity($productId, $previousMonth);
-                    $stockEndQuan = ($oldStockQuan + $prorealityQuan) - $laseTotalExport; // tồn cuối kỳ gần nhất
-
-                    $newStockQuan = new TotalMonthQuantity;
-                    $newStockQuan->product_id = $productId;
-                    $newStockQuan->status = 4;
-                    $newStockQuan->month = $month;
-                    $newStockQuan->totalQuan = $stockEndQuan;
-                    $newStockQuan->save();
-                    $count++;
-                }
-
-                if ($stockMOQ == null) {
-                    $stockMOQ = TotalMonthQuantity::where('product_id', $productId)->where('status', 7)->latest()->value('totalQuan');
-
-                    // thực hiện tính lại tồn đầu kỳ
-                    $newStockMOQ = new TotalMonthQuantity;
-                    $newStockMOQ->product_id = $productId;
-                    $newStockMOQ->status = 7;
-                    $newStockMOQ->month = $month;
-                    $newStockMOQ->totalQuan = $stockMOQ;
-                    $newStockMOQ->save();
-                    $countMOQ++;
-                }
-            }
-            DB::commit();
-            Log::info('Đã cập nhật tồn đầu kỳ cho '.$count.' sản phẩm, tồn đầu kỳ 200% cho '.$count200.' sản phẩm, MOQ cho '.$countMOQ.'sản phẩm.');
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('errors'.$e->getMessage().' getLine'.$e->getLine());
+            return self::FAILURE;
         }
-    }
+        if ($this->option('product') !== null && ! ctype_digit((string) $this->option('product'))) {
+            $this->error('ID sản phẩm phải là số nguyên.');
 
-    private function previousMonthPoExportQuantity(int $productId, Carbon $previousMonth): int
-    {
-        return (int) TotalDailyQuantityPO::where('product_id', $productId)
-            ->where('status', 8)
-            ->whereMonth('date', $previousMonth->month)
-            ->whereYear('date', $previousMonth->year)
-            ->sum('totalQuan');
+            return self::FAILURE;
+        }
+
+        try {
+            $changes = DB::transaction(function () use ($inventory, $from) {
+                $changes = [];
+                $products = Product::query()->when($this->option('product') !== null,
+                    fn ($query) => $query->whereKey($this->option('product'))
+                )->orderBy('id')->get();
+
+                foreach ($products as $product) {
+                    array_push($changes, ...$inventory->recalculate($product->id, $from, (bool) $this->option('dry-run')));
+                    $month = Carbon::now()->format('m-Y');
+                    if (! TotalMonthQuantity::where('product_id', $product->id)->where('month', $month)->where('status', 7)->exists()) {
+                        $moq = TotalMonthQuantity::where('product_id', $product->id)->where('status', 7)->latest()->value('totalQuan');
+                        $changes[] = [$product->id, $month, 7, null, $moq];
+                        if (! $this->option('dry-run')) {
+                            TotalMonthQuantity::create([
+                                'product_id' => $product->id, 'month' => $month,
+                                'status' => 7, 'totalQuan' => $moq,
+                            ]);
+                        }
+                    }
+                }
+
+                return $changes;
+            });
+            $this->table(['ID sản phẩm', 'Tháng', 'Trạng thái', 'Số cũ', 'Số mới'], $changes);
+            $message = ($this->option('dry-run') ? 'Dự kiến cập nhật ' : 'Đã cập nhật ').count($changes).' bản ghi.';
+            $this->info($message);
+            if (! $this->option('dry-run')) {
+                Log::info($message, ['from' => $from, 'product' => $this->option('product')]);
+            }
+
+            return self::SUCCESS;
+        } catch (\Throwable $e) {
+            Log::error('Không thể cập nhật tồn đầu kỳ.', ['exception' => $e]);
+            $this->error('Không thể cập nhật tồn đầu kỳ. Vui lòng kiểm tra nhật ký hệ thống.');
+
+            return self::FAILURE;
+        }
     }
 }

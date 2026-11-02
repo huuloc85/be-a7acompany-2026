@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\TotalDailyQuantity;
 use App\Models\TotalDailyQuantityPO;
 use App\Models\TotalMonthQuantity;
+use App\Services\ProductInventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -185,6 +186,13 @@ class CheckPoController extends Controller
             collect($newTotalRows)->chunk(500)->each(function ($rows) {
                 TotalDailyQuantityPO::insert($rows->all());
             });
+
+            // Bulk inserts bypass model events. Recalculate once per product.
+            foreach (collect($totalIncrements)->groupBy('product_id') as $productId => $increments) {
+                app(ProductInventoryService::class)->recalculate(
+                    $productId, Carbon::parse($increments->min('date'))->format('m-Y')
+                );
+            }
 
             DB::commit();
 

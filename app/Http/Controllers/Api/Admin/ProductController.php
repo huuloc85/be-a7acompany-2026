@@ -590,16 +590,18 @@ class ProductController extends BaseController
                 return $this->updatePoDetailProduct($request);
             }
 
-            $month = Carbon::now()->format('m');
-            $year = Carbon::now()->format('Y');
-            $monthYear = Carbon::now()->format('m-Y');
-
             $daily = DailyQuantity::with('employee:id,name')->find($request->dailyId);
             if (! $daily) {
                 return response()->json([
                     'message' => 'Không tìm thấy bản ghi!',
                 ], 404);
             }
+
+            DB::beginTransaction();
+            $date = Carbon::parse($daily->date);
+            $month = $date->format('m');
+            $year = $date->format('Y');
+            $monthYear = $date->format('m-Y');
 
             // cập nhật lại số lượng mới
             $daily->quantity = $request->quantity;
@@ -636,6 +638,8 @@ class ProductController extends BaseController
                 ['totalQuan' => $sumMonth]
             );
 
+            DB::commit();
+
             return response()->json([
                 'message' => 'Cập nhật sản lượng thành công!',
                 'daily' => $daily,
@@ -643,6 +647,7 @@ class ProductController extends BaseController
                 'totalMonth' => $totalMonth,
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             Log::error('errors: '.$e->getMessage().' line: '.$e->getLine());
 
@@ -664,7 +669,7 @@ class ProductController extends BaseController
 
             $detail = DailyQuantity::findOrFail($id);
 
-            $monthYear = Carbon::now()->format('m-Y');
+            $monthYear = Carbon::parse($detail->date)->format('m-Y');
 
             // Update quantity total day
             $totalDaily = TotalDailyQuantity::where('product_id', $detail->product_id)
@@ -786,7 +791,7 @@ class ProductController extends BaseController
         TotalDailyQuantityPO::where('product_id', $productId)
             ->where('date', $date)
             ->where('status', $status)
-            ->delete();
+            ->get()->each->delete();
 
         return null;
     }

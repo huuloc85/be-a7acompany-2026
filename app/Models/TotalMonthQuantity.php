@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ProductInventoryService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -10,6 +11,17 @@ class TotalMonthQuantity extends Model
     use HasFactory;
 
     protected $table = 'total_month_quantities';
+
+    protected static function booted(): void
+    {
+        $sync = function (self $quantity) {
+            if (in_array((int) $quantity->getAttribute('status'), [1, 2, 3, 4, 5, 6], true)) {
+                app(ProductInventoryService::class)->recalculate($quantity->product_id, $quantity->month);
+            }
+        };
+        static::saved($sync);
+        static::deleted($sync);
+    }
 
     // paginate
     public const paginate = 10;
