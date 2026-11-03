@@ -26,9 +26,9 @@ class CheckPoController extends Controller
             $validate = $request->validate([
                 'date' => 'required|date_format:Y-m-d',
                 'status' => 'required|in:1,6',
-                'shift' => 'nullable|integer',
+                'shift' => 'nullable|integer|in:1,2',
                 'products' => 'required|array',
-                'products.*.quantity' => 'required|integer',
+                'products.*.quantity' => 'required|integer|min:1',
                 'products.*.productId' => 'required|integer|exists:products,id',
             ]);
 
@@ -37,8 +37,9 @@ class CheckPoController extends Controller
             $status = $validate['status'];
             $shift = $validate['shift'] ?? null;
 
-            $results = collect($validate['products'])->map(function ($product) use ($date, $month, $status, $shift) {
+            $results = collect($validate['products'])->sortBy('productId')->map(function ($product) use ($date, $month, $status, $shift) {
                 $productId = $product['productId'];
+                Product::lockForUpdate()->findOrFail($productId);
                 $quantity = $product['quantity'];
                 $created_at = Carbon::now();
 
@@ -61,29 +62,17 @@ class CheckPoController extends Controller
                     'created_at' => $created_at,
                 ]);
 
-                // Update or create total daily
-                $totalDaily = TotalDailyQuantity::updateOrCreate(
-                    [
-                        'product_id' => $productId,
-                        'date' => $date,
-                        'status' => $status,
-                    ],
-                    [
-                        'totalQuan' => DB::raw('COALESCE(totalQuan,0)+'.$quantity),
-                    ]
-                );
+                $totalDaily = TotalDailyQuantity::lockForUpdate()->firstOrNew([
+                    'product_id' => $productId, 'date' => $date, 'status' => $status,
+                ]);
+                $totalDaily->totalQuan = ($totalDaily->totalQuan ?? 0) + $quantity;
+                $totalDaily->save();
 
-                // Update or create total month
-                $totalMonth = TotalMonthQuantity::updateOrCreate(
-                    [
-                        'product_id' => $productId,
-                        'month' => $month,
-                        'status' => $status,
-                    ],
-                    [
-                        'totalQuan' => DB::raw('COALESCE(totalQuan,0)+'.$quantity),
-                    ]
-                );
+                $totalMonth = TotalMonthQuantity::lockForUpdate()->firstOrNew([
+                    'product_id' => $productId, 'month' => $month, 'status' => $status,
+                ]);
+                $totalMonth->totalQuan = ($totalMonth->totalQuan ?? 0) + $quantity;
+                $totalMonth->save();
 
                 return [
                     'daily' => $dailyQuan,
@@ -148,6 +137,9 @@ class CheckPoController extends Controller
                     $totalIncrements[$totalKey]['totalQuan'] += $quantity;
                 }
             }
+
+            Product::whereIn('id', collect($dailyRows)->pluck('product_id')->unique())
+                ->orderBy('id')->lockForUpdate()->get();
 
             collect($dailyRows)->chunk(500)->each(function ($rows) {
                 DailyQuantityPO::insert($rows->all());
@@ -341,13 +333,20 @@ class CheckPoController extends Controller
             $date = $validate['date'];
             $status = 8;
 
-            $results = collect($validate['products'])->map(function ($product) use ($date, $status) {
+            $results = collect($validate['products'])->sortBy('productId')->map(function ($product) use ($date, $status) {
                 $productId = $product['productId'];
                 $quantity = $product['quantity'];
                 $employeeId = Auth::id();
+                Product::lockForUpdate()->findOrFail($productId);
+                if ($quantity < 0) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['products' => 'Số lượng PO không được âm.']);
+                }
+                if (DailyQuantityPO::where('product_id', $productId)->where('date', $date)->where('status', $status)->lockForUpdate()->get()->count() > 1) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['products' => 'Ngày này có nhiều lô PO. Vui lòng sửa số lượng tại chi tiết từng lô.']);
+                }
 
                 // Update or create DailyQuantityPO
-                $dailyQuantity = DailyQuantityPO::updateOrCreate(
+                $dailyQuantity = DailyQuantityPO::lockForUpdate()->updateOrCreate(
                     [
                         'product_id' => $productId,
                         'date' => $date,
@@ -360,7 +359,7 @@ class CheckPoController extends Controller
                 );
 
                 // Update or create TotalDailyQuantityPO
-                $totalDailyQuantity = TotalDailyQuantityPO::updateOrCreate(
+                $totalDailyQuantity = TotalDailyQuantityPO::lockForUpdate()->updateOrCreate(
                     [
                         'product_id' => $productId,
                         'date' => $date,
@@ -396,6 +395,9 @@ class CheckPoController extends Controller
         DB::beginTransaction();
         try {
             $records = DailyQuantityPO::where('batch_id', $batchId)->get();
+            $productIds = $records->pluck('product_id')->unique()->all();
+            Product::whereIn('id', $productIds)->orderBy('id')->lockForUpdate()->get();
+            $records = DailyQuantityPO::where('batch_id', $batchId)->lockForUpdate()->get();
             $count = $records->count();
 
             if ($count === 0) {
@@ -411,7 +413,7 @@ class CheckPoController extends Controller
             DailyQuantityPO::where('batch_id', $batchId)->delete();
 
             // Update TotalDailyQuantityPO for each affected date
-            $this->syncTotalDailyPO($affectedDates);
+            $this->syncTotalDailyPO($affectedDates, $productIds);
 
             DB::commit();
 
@@ -430,6 +432,7 @@ class CheckPoController extends Controller
     {
         DB::beginTransaction();
         try {
+            Product::orderBy('id')->lockForUpdate()->get();
             $affectedDates = DailyQuantityPO::select('date')->distinct()->pluck('date')->all();
             $count = DailyQuantityPO::count();
 
@@ -464,13 +467,15 @@ class CheckPoController extends Controller
         try {
             // Find and get the record in DailyQuantityPO to delete
             $dailyQuantity = DailyQuantityPO::findOrFail($id);
+            Product::lockForUpdate()->findOrFail($dailyQuantity->product_id);
+            $dailyQuantity = DailyQuantityPO::lockForUpdate()->findOrFail($id);
             $date = $dailyQuantity->date;
 
             // Delete the record in DailyQuantityPO
             $dailyQuantity->delete();
 
             // Update the records in TotalDailyQuantityPo for the specified date
-            $this->syncTotalDailyPO([$date]);
+            $this->syncTotalDailyPO([$date], [$dailyQuantity->product_id]);
 
             DB::commit();
 
@@ -485,16 +490,18 @@ class CheckPoController extends Controller
         }
     }
 
-    private function syncTotalDailyPO(array $dates): void
+    private function syncTotalDailyPO(array $dates, ?array $productIds = null): void
     {
         foreach (array_filter($dates) as $date) {
-            $totalDailyQuantities = TotalDailyQuantityPO::whereDate('date', $date)->get();
+            $totalDailyQuantities = TotalDailyQuantityPO::whereDate('date', $date)
+                ->when($productIds !== null, fn ($query) => $query->whereIn('product_id', $productIds))
+                ->orderBy('product_id')->lockForUpdate()->get();
 
             foreach ($totalDailyQuantities as $totalDailyQuantity) {
                 $totalDailyQuantity->totalQuan = DailyQuantityPO::where('product_id', $totalDailyQuantity->product_id)
                     ->where('status', $totalDailyQuantity->status)
                     ->whereDate('date', $date)
-                    ->sum('quantity');
+                    ->lockForUpdate()->get()->sum('quantity');
                 $totalDailyQuantity->save();
             }
         }

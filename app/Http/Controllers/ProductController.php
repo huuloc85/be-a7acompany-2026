@@ -889,10 +889,12 @@ class ProductController extends Controller
         try {
             $daily = DailyQuantity::where('id', $id)->first();
             if ($daily != null) {
-                $month = Carbon::now()->format('m');
+                Product::lockForUpdate()->findOrFail($daily->product_id);
+                $daily->refresh();
+                $month = Carbon::now()->format('m-Y');
                 $monthYear = Carbon::now()->format('m-Y');
                 $carbonDate = strtotime($daily->date);
-                $monthDaily = date('m', $carbonDate);
+                $monthDaily = date('m-Y', $carbonDate);
 
                 if ($monthDaily == $month) {
                     // update quantity total day
@@ -918,11 +920,14 @@ class ProductController extends Controller
                     LogActivity::logRoleSpecificLoginActivity(auth()->user(), 'Admin Sửa Xoá Sản Lượng', 'Admin đã xoá sản lượng');
                     toast('Xoá sản lượng thành công!', 'success', 'top-right');
                 } else {
+                    DB::rollBack();
                     toast('Sản phẩm đã quá thời gian cho phép xoá sản lượng!', 'error', 'top-right');
                 }
 
                 return redirect()->back();
             }
+
+            DB::rollBack();
 
             return redirect()->back();
         } catch (\Exception $e) {

@@ -63,7 +63,7 @@ class EmpDailyActivity extends Controller
     public function show($id)
     {
         try {
-            $checkEmployee = CheckEmployee::with(['employee', 'product'])->findOrFail($id);
+            $checkEmployee = CheckEmployee::with(['employee', 'product'])->where('employee_id', Auth::id())->findOrFail($id);
 
             LogActivity::logViewActivity(auth()->user(), 'Xem Chi Tiết Hoạt Động', 'Nhân viên xem chi tiết hoạt động theo ID');
 
@@ -82,7 +82,7 @@ class EmpDailyActivity extends Controller
                 'status' => 'nullable|in:1,2,6',
             ]);
 
-            $checkEmployee = CheckEmployee::findOrFail($id);
+            $checkEmployee = CheckEmployee::where('employee_id', Auth::id())->findOrFail($id);
             $checkEmployee->update($request->only('product_id', 'status'));
 
             DB::commit();
@@ -101,7 +101,7 @@ class EmpDailyActivity extends Controller
     {
         DB::beginTransaction();
         try {
-            $checkEmployee = CheckEmployee::findOrFail($id);
+            $checkEmployee = CheckEmployee::where('employee_id', Auth::id())->findOrFail($id);
             $checkEmployee->delete();
 
             DB::commit();

@@ -2,10 +2,8 @@
 
 namespace App\Http\Middleware\API;
 
-use App\Models\Permission;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class CheckPermissionKey
@@ -20,7 +18,7 @@ class CheckPermissionKey
      * Logic:
      *   1. Super Admin / Admin / Co Admin → luôn được phép (admin-level roles)
      *   2. Check exact key match trước
-     *   3. Nếu không match exact → check theo module (cùng module thì pass)
+     *   3. Không dùng quyền khác cùng module để vượt quyền được yêu cầu
      *   4. Nếu truyền nhiều permission keys (phân cách bằng dấu phẩy) → chỉ cần 1 match
      *
      * @param  string  ...$permissionKeys  Một hoặc nhiều permission keys
@@ -56,11 +54,6 @@ class CheckPermissionKey
                 return $next($request);
             }
 
-            // Check 2: Module-based match
-            // Tìm module của permission key được yêu cầu, rồi check user có BẤT KỲ permission nào trong module đó không
-            if ($this->hasModulePermission($user, $key)) {
-                return $next($request);
-            }
         }
 
         Log::warning('Permission denied', [
@@ -73,42 +66,5 @@ class CheckPermissionKey
         return response()->json([
             'message' => 'Bạn không có quyền truy cập chức năng này.',
         ], 403);
-    }
-
-    /**
-     * Kiểm tra user có bất kỳ permission nào trong cùng module không.
-     *
-     * Ví dụ: route yêu cầu 'view_schedule'
-     *   → tìm module của 'view_schedule' = 'schedule'
-     *   → lấy tất cả keys trong module 'schedule': [view_schedule, view_schedule_categories]
-     *   → check user có bất kỳ key nào trong đó
-     */
-    private function hasModulePermission($user, string $requiredKey): bool
-    {
-        // Cache module map 60 phút để tránh query liên tục
-        $moduleMap = Cache::remember('permissions_module_map', 3600, function () {
-            return Permission::whereNotNull('module')
-                ->pluck('module', 'key')
-                ->toArray();
-        });
-
-        // Tìm module của key được yêu cầu
-        $module = $moduleMap[$requiredKey] ?? null;
-
-        if (! $module) {
-            return false;
-        }
-
-        // Lấy tất cả keys trong cùng module
-        $moduleKeys = array_keys(array_filter($moduleMap, fn ($m) => $m === $module));
-
-        // Kiểm tra user có bất kỳ permission nào trong module
-        foreach ($moduleKeys as $moduleKey) {
-            if ($moduleKey !== $requiredKey && $user->hasPermission($moduleKey)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

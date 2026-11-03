@@ -797,31 +797,23 @@ class AttendanceRecordController extends Controller
     // Kéo Data Từ Mcc
     public function updateDataCC(Request $request)
     {
+        $data = $request->validate([
+            'data' => 'required|array|min:1|max:1000',
+            'data.*.employee_code' => 'required|string|exists:employees,id',
+            'data.*.datetime' => 'required|date_format:Y-m-d H:i:s',
+        ])['data'];
+
         try {
-            $data = $request->input('data');
-            Log::info('Số lượng bản ghi nhận được: '.count($data));
-            if (! empty($data)) {
-                foreach ($data as $record) {
-                    $check = DB::table('attendencerecord')
-                        ->where('employee_code', $record['employee_code'])
-                        ->where('datetime', $record['datetime'])
-                        ->first();
-
-                    if (! $check) {
-                        DB::table('attendencerecord')->insert($record);
-                    } else {
-                        Log::error('bản ghi đã tồn tại employee_code:'.$record['employee_code'].' datetime: '.$record['datetime']);
-                    }
+            DB::transaction(function () use ($data) {
+                $writer = new \App\Services\AttendanceEventWriter;
+                foreach (collect($data)->sortBy('employee_code') as $record) {
+                    $writer->store($record['employee_code'], Carbon::parse($record['datetime']));
                 }
+            });
 
-                return response()->json(['message' => 'Data inserted successfully']);
-            } else {
-                return response()->json(['message' => 'No data to insert'], 400);
-            }
-        } catch (\Exception $e) {
-            Log::error('error: '.$e);
-
-            return response()->json(['message' => 'No data to insert'], 500);
+            return response()->json(['message' => 'Data inserted successfully']);
+        } catch (\Throwable $e) {
+            return \App\Helpers\HandleError::handle($e);
         }
     }
 

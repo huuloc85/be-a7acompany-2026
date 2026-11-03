@@ -101,13 +101,14 @@ class TotalQuantityController extends BaseController
         DB::beginTransaction();
         try {
             $validate = $request->validate([
-                'month' => 'required|string',
-                'status' => 'required|numeric|min:0|max:8',
+                'month' => 'required|date_format:m-Y',
+                'status' => 'required|integer|in:1,2,3,4,5,6,7',
                 'productId' => 'required|integer|exists:products,id',
                 'quantity' => 'required|integer',
             ]);
 
-            $totalQuantity = TotalMonthQuantity::updateOrCreate(
+            \App\Models\Product::lockForUpdate()->findOrFail($validate['productId']);
+            $totalQuantity = TotalMonthQuantity::lockForUpdate()->updateOrCreate(
                 [
                     'product_id' => $validate['productId'],
                     'month' => $validate['month'],
@@ -133,14 +134,16 @@ class TotalQuantityController extends BaseController
         try {
             $validate = $request->validate([
                 'month' => 'required|date_format:m-Y',
-                'status' => 'required|numeric|min:0|max:8',
+                'status' => 'required|integer|in:1,2,3,4,5,6,7',
                 'products' => 'nullable|array',
                 'products.*.quantity' => 'required|integer',
                 'products.*.productId' => 'required|integer|exists:products,id',
             ]);
 
-            $totalQuantities = collect($validate['products'])->map(function ($product) use ($validate) {
-                return TotalMonthQuantity::updateOrCreate(
+            $totalQuantities = collect($validate['products'] ?? [])->sortBy('productId')->map(function ($product) use ($validate) {
+                \App\Models\Product::lockForUpdate()->findOrFail($product['productId']);
+
+                return TotalMonthQuantity::lockForUpdate()->updateOrCreate(
                     [
                         'product_id' => $product['productId'],
                         'month' => $validate['month'],
@@ -172,13 +175,14 @@ class TotalQuantityController extends BaseController
             $validate = $request->validate([
                 'products' => 'required|array',
                 'products.*.date' => 'required|string|date_format:d-m-Y',
-                'products.*.status' => 'required|numeric|min:0|max:8',
+                'products.*.status' => 'required|integer|in:1,2,3,6',
                 'products.*.shift' => 'nullable|integer|in:1,2',
-                'products.*.quantity' => 'required|integer',
+                'products.*.quantity' => 'required|integer|min:1',
                 'products.*.productId' => 'required|exists:products,id',
             ]);
 
-            $totalQuantities = collect($validate['products'])->map(function ($product) {
+            $totalQuantities = collect($validate['products'] ?? [])->sortBy('productId')->map(function ($product) {
+                \App\Models\Product::lockForUpdate()->findOrFail($product['productId']);
                 $date = date('Y-m-d', strtotime($product['date']));
                 $status = $product['status'];
                 $shift = $product['shift'] ?? null;
@@ -188,9 +192,9 @@ class TotalQuantityController extends BaseController
 
                 if ($status == 1 && ! is_null($shift)) {
                     if ($shift == 1) {
-                        $createdAt = $date.'19:30:00 ';
+                        $createdAt = $date.' 19:30:00';
                     } else {
-                        $createdAt = date('Y-m-d', strtotime($date.' +1 day')).'07:30:00 ';
+                        $createdAt = date('Y-m-d', strtotime($date.' +1 day')).' 07:30:00';
                     }
                 } else {
                     $createdAt = Carbon::now();
@@ -203,11 +207,12 @@ class TotalQuantityController extends BaseController
                 $dayQuantity->quantity = $quantity;
                 $dayQuantity->date = $date;
                 $dayQuantity->status = $status;
+                $dayQuantity->shift = $shift ? 'Ca '.$shift : null;
                 $dayQuantity->created_at = $createdAt;
                 $dayQuantity->save();
 
                 // Create or update the total daily and monthly quantities
-                $totalDaily = TotalDailyQuantity::firstOrNew(
+                $totalDaily = TotalDailyQuantity::lockForUpdate()->firstOrNew(
                     [
                         'product_id' => $productId,
                         'date' => $date,
@@ -221,7 +226,7 @@ class TotalQuantityController extends BaseController
                 }
                 $totalDaily->save();
 
-                $totalMonth = TotalMonthQuantity::firstOrNew(
+                $totalMonth = TotalMonthQuantity::lockForUpdate()->firstOrNew(
                     [
                         'product_id' => $productId,
                         'month' => date('m-Y', strtotime($date)),

@@ -128,7 +128,7 @@ class EmpTodoController extends Controller
         try {
             $validatedData = $request->validate([
                 'productId' => 'required|exists:products,id',
-                'quantity' => 'required|numeric|min:1',
+                'quantity' => 'required|integer|min:1',
                 'shift' => 'required|in:Ca 1,Ca 2',
             ]);
 
@@ -146,6 +146,8 @@ class EmpTodoController extends Controller
                 ->first();
 
             if (! $checkEmployee) {
+                DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Nhân viên cần nhập sản phẩm cần kiểm hoặc sản xuất trước khi nhập sản lượng!',
@@ -155,6 +157,8 @@ class EmpTodoController extends Controller
             // TODO: ĐỔI LẠI 10 PHÚT TRƯỚC KHI DEPLOY
             // Kiểm tra created_at có trong vòng 1 phút so với hiện tại không (tạm giảm để test)
             if ($checkEmployee->created_at->diffInMinutes(Carbon::now()) <= 1) {
+                DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Nhân viên nhập sản phẩm hoạt động chưa quá 1 phút. Vui lòng chờ thêm.',
@@ -170,6 +174,8 @@ class EmpTodoController extends Controller
                 ($shift == 'Ca 1' && ! $date->isSameDay($today)) ||
                 ($shift == 'Ca 2' && ! ($date->isSameDay($today) || $date->copy()->addDay()->isSameDay($today)))
             ) {
+                DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Bạn chỉ có thể nhập sản lượng cho sản phẩm cùng ngày với ngày hiện tại hoặc ngày hôm sau nếu là Ca 2!',
@@ -198,111 +204,31 @@ class EmpTodoController extends Controller
                 ], 403);
             }
 
-            $date = Carbon::now()->format('Y-m-d');
-            $month = Carbon::now()->format('m-Y');
-            $currentDateTime = Carbon::now();
-            $hour = $currentDateTime->hour;
+            // Ngày nghiệp vụ lấy từ hoạt động/ca đã được kiểm tra ở trên.
+            $month = $date->format('m-Y');
+            $date = $date->format('Y-m-d');
+            \App\Models\Product::lockForUpdate()->findOrFail($productId);
 
-            if ($status == 1 && $hour < 9) {
-                $subDate = Carbon::now()->subDay()->format('Y-m-d');
-                $dailyQuan = new DailyQuantity;
-                $dailyQuan->product_id = $productId;
-                $dailyQuan->employee_id = Auth()->user()->id;
-                $dailyQuan->quantity = $quantity;
-                $dailyQuan->status = $status;
-                $dailyQuan->shift = $shift;
-                $dailyQuan->date = $subDate;
+            $dailyQuan = new DailyQuantity;
+            $dailyQuan->product_id = $productId;
+            $dailyQuan->employee_id = $employeeId;
+            $dailyQuan->quantity = $quantity;
+            $dailyQuan->status = $status;
+            $dailyQuan->shift = $shift;
+            $dailyQuan->date = $date;
+            $dailyQuan->save();
 
-                // cập nhật dailytotal với subDate
-                $totalDaily = TotalDailyQuantity::where('product_id', $productId)
-                    ->where('date', $subDate)
-                    ->where('status', $status)->first();
-                if ($totalDaily != null) {
-                    $totalDaily->totalQuan = $totalDaily->totalQuan + $quantity;
-                    $totalDaily->save();
-                } else {
-                    $totalDaily = new TotalDailyQuantity;
-                    $totalDaily->product_id = $productId;
-                    $totalDaily->date = $subDate;
-                    $totalDaily->status = $status;
-                    $totalDaily->totalQuan = $quantity;
-                    $totalDaily->save();
-                }
+            $totalDaily = TotalDailyQuantity::lockForUpdate()->firstOrNew([
+                'product_id' => $productId, 'date' => $date, 'status' => $status,
+            ]);
+            $totalDaily->totalQuan = ($totalDaily->totalQuan ?? 0) + $quantity;
+            $totalDaily->save();
 
-                $dailyQuan->save();
-                $currentDateTime1 = Carbon::now()->format('d');
-                if ($currentDateTime1 == '1' || $currentDateTime1 == '01') {
-                    $subMonth = Carbon::now()->subMonth()->format('m-Y');
-                    $totalMonth = TotalMonthQuantity::where('product_id', $productId)
-                        ->where('month', $subMonth)
-                        ->where('status', $status)->first();
-                    if ($totalMonth != null) {
-                        $totalMonth->totalQuan = $totalMonth->totalQuan + $quantity;
-                        $totalMonth->save();
-                    } else {
-                        $totalMonth = new TotalMonthQuantity;
-                        $totalMonth->product_id = $productId;
-                        $totalMonth->month = $subMonth;
-                        $totalMonth->status = $status;
-                        $totalMonth->totalQuan = $quantity;
-                        $totalMonth->save();
-                    }
-                } else {
-                    $totalMonth = TotalMonthQuantity::where('product_id', $productId)
-                        ->where('month', $month)
-                        ->where('status', $status)->first();
-                    if ($totalMonth != null) {
-                        $totalMonth->totalQuan = $totalMonth->totalQuan + $quantity;
-                        $totalMonth->save();
-                    } else {
-                        $totalMonth = new TotalMonthQuantity;
-                        $totalMonth->product_id = $productId;
-                        $totalMonth->month = $month;
-                        $totalMonth->status = $status;
-                        $totalMonth->totalQuan = $quantity;
-                        $totalMonth->save();
-                    }
-                }
-            } else {
-                $dailyQuan = new DailyQuantity;
-                $dailyQuan->product_id = $productId;
-                $dailyQuan->employee_id = Auth()->user()->id;
-                $dailyQuan->quantity = $quantity;
-                $dailyQuan->status = $status;
-                $dailyQuan->shift = $shift;
-                $dailyQuan->date = $date;
-                $dailyQuan->save();
-
-                $totalDaily = TotalDailyQuantity::where('product_id', $productId)
-                    ->where('date', $date)
-                    ->where('status', $status)->first();
-                if ($totalDaily != null) {
-                    $totalDaily->totalQuan = $totalDaily->totalQuan + $quantity;
-                    $totalDaily->save();
-                } else {
-                    $totalDaily = new TotalDailyQuantity;
-                    $totalDaily->product_id = $productId;
-                    $totalDaily->date = $date;
-                    $totalDaily->status = $status;
-                    $totalDaily->totalQuan = $quantity;
-                    $totalDaily->save();
-                }
-
-                $totalMonth = TotalMonthQuantity::where('product_id', $productId)
-                    ->where('month', $month)
-                    ->where('status', $status)->first();
-                if ($totalMonth != null) {
-                    $totalMonth->totalQuan = $totalMonth->totalQuan + $quantity;
-                    $totalMonth->save();
-                } else {
-                    $totalMonth = new TotalMonthQuantity;
-                    $totalMonth->product_id = $productId;
-                    $totalMonth->month = $month;
-                    $totalMonth->status = $status;
-                    $totalMonth->totalQuan = $quantity;
-                    $totalMonth->save();
-                }
-            }
+            $totalMonth = TotalMonthQuantity::lockForUpdate()->firstOrNew([
+                'product_id' => $productId, 'month' => $month, 'status' => $status,
+            ]);
+            $totalMonth->totalQuan = ($totalMonth->totalQuan ?? 0) + $quantity;
+            $totalMonth->save();
 
             DB::commit();
             LogActivity::logViewActivity(auth()->user(), 'Nhập Sản Lượng', 'Nhân viên nhập sản lượng');
@@ -323,7 +249,7 @@ class EmpTodoController extends Controller
         // Validate input
         $validatedData = $request->validate([
             'productId' => 'required|exists:products,id',
-            'quantity' => 'required|numeric|min:1',
+            'quantity' => 'required|integer|min:1',
         ]);
 
         $productId = $validatedData['productId'];
@@ -335,6 +261,7 @@ class EmpTodoController extends Controller
             $month = Carbon::now()->format('m-Y');
             $employeeId = Auth::user()->id;
             $status = 6; // Status 6: error product
+            Product::lockForUpdate()->findOrFail($productId);
 
             // Add DailyQuantity
             $dailyQuan = new DailyQuantity;
@@ -346,7 +273,7 @@ class EmpTodoController extends Controller
             $dailyQuan->save();
 
             // Update TotalDailyQuantity
-            $totalDaily = TotalDailyQuantity::firstOrNew(
+            $totalDaily = TotalDailyQuantity::lockForUpdate()->firstOrNew(
                 ['product_id' => $productId, 'date' => $date, 'status' => $status],
                 ['totalQuan' => 0]
             );
@@ -354,7 +281,7 @@ class EmpTodoController extends Controller
             $totalDaily->save();
 
             // Update TotalMonthQuantity
-            $totalMonth = TotalMonthQuantity::firstOrNew(
+            $totalMonth = TotalMonthQuantity::lockForUpdate()->firstOrNew(
                 ['product_id' => $productId, 'month' => $month, 'status' => $status],
                 ['totalQuan' => 0]
             );

@@ -405,6 +405,13 @@ class CheckPoController extends Controller
         return view('checkpo.history-import-quantity', compact('products', 'month', 'dailyQuantities', 'selectedDate', 'dates'));
     }
 
+    public function editPO($id)
+    {
+        $daily = DailyQuantityPO::findOrFail($id);
+
+        return redirect()->route('admin.history-import-quantity', ['date' => $daily->date]);
+    }
+
     public function updatePO(Request $request)
     {
         try {

@@ -46,9 +46,9 @@ Route::prefix('rbac')->middleware('permission')->group(function () {
 
 Route::prefix('permissions')->middleware('permission')->group(function () {
     Route::get('/', [PermissionController::class, 'index'])->name('permissions.index');
-    Route::get('/create', [PermissionController::class, 'create'])->name('permissions.create');
+    Route::get('/create', [PermissionController::class, 'index'])->name('permissions.create');
     Route::post('/', [PermissionController::class, 'store'])->name('permissions.store');
-    Route::get('/{permission}/edit', [PermissionController::class, 'edit'])->name('permissions.edit');
+    Route::get('/{permission}/edit', [PermissionController::class, 'index'])->name('permissions.edit');
     Route::put('/{permission}', [PermissionController::class, 'update'])->name('permissions.update');
     Route::delete('/{permission}', [PermissionController::class, 'destroy'])->name('permissions.destroy');
 
@@ -131,7 +131,7 @@ Route::prefix('/admin')->middleware(['auth'])->group(function () {
         Route::get('/', [LoginHistoryController::class, 'index'])->name('admin.history.home');
         Route::post('/delete/history', [LoginHistoryController::class, 'deleteHistory'])->name('admin.delete.history.day');
         Route::get('/daily-productivity-history', [DailyProductivityHistoryController::class, 'index'])->name('admin.daily.productivity.history');
-        Route::get('/check-employees-without-logs', [DailyProductivityHistoryController::class, 'checkEmployeesWithoutLogs'])->name('admin.check.employee.withoutlogs');
+        Route::get('/check-employees-without-logs', [DailyProductivityHistoryController::class, 'index'])->name('admin.check.employee.withoutlogs');
         Route::get('/view-all-quantity', [LoginHistoryController::class, 'viewAllQuantity'])->name('admin.history.view.all.quantity');
     });
 
@@ -174,7 +174,7 @@ Route::prefix('/admin')->middleware(['auth'])->group(function () {
         Route::delete('/delete-update-quantity/{id}', [ProductController::class, 'handleDeleteUpdateQUantity'])->name('admin.product.delete-update-quantity');
         Route::get('/update-export-200', [ProductController::class, 'updateQuantExport200'])->name('admin.product.update-export-200');
         Route::post('/handle-update-export-200', [ProductController::class, 'handleUpdateQuantExport200'])->name('admin.product.handle-update-export-200');
-        Route::get('/showError', [ProductController::class, 'showProductError'])->name('admin.product.detail-error');
+        Route::get('/showError', [ProductController::class, 'historyUpdateError'])->name('admin.product.detail-error');
         // cập nhật moq
         Route::get('/update-moq', [ProductController::class, 'updateMOQ'])->name('admin.product.update-moq');
         Route::post('/handle-update-moq', [ProductController::class, 'handleUpdateMOQ'])->name('admin.product.handle-update-moq');
@@ -194,7 +194,7 @@ Route::prefix('/admin')->middleware(['auth'])->group(function () {
     Route::middleware(['check.qa.qc'])->prefix('/packing')->group(function () {
         Route::get('/', [StampController::class, 'packingStamp'])->name('admin.product.packing');
         Route::post('/register', [StampController::class, 'StorePackingStamp'])->name('admin.packing.register');
-        Route::post('/save-printPacking', [StampController::class, 'savePrintPacking'])->name('admin.barcode.save.print.packing');
+        Route::post('/save-printPacking', [StampController::class, 'savePrint'])->name('admin.barcode.save.print.packing');
     });
 
     // view check barcode for employee
@@ -223,7 +223,7 @@ Route::prefix('/admin')->middleware(['auth'])->group(function () {
         Route::get('/', [CelenderController::class, 'index'])->name('admin.celender.home');
         Route::post('/add', [CelenderController::class, 'add'])->name('admin.celender.add');
         Route::post('/store/{id}', [CelenderController::class, 'store'])->name('admin.celender.store');
-        Route::get('/edit/{id}', [CelenderController::class, 'edit'])->name('admin.celender.edit');
+        Route::get('/edit/{id}', [CelenderController::class, 'detail'])->name('admin.celender.edit');
         Route::post('/update/{id}', [CelenderController::class, 'update'])->name('admin.celender.update');
         Route::get('/detail/{id}', [CelenderController::class, 'detail'])->name('admin.celender.detail');
         Route::delete('/delete/{id}', [CelenderController::class, 'delete'])->name('admin.celender.delete');

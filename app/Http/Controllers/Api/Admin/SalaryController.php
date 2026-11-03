@@ -362,6 +362,8 @@ class SalaryController extends BaseController
             $salary = SalaryManager::find($id);
 
             if (! $salary) {
+                DB::rollBack();
+
                 return response()->json([
                     'error' => [
                         'code' => 404,

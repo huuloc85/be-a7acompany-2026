@@ -347,6 +347,7 @@ class AuthController extends BaseController
     {
         try {
             $employee = Employee::findOrFail($id);
+            \App\Services\EmployeePrivilegeGuard::check($employee->role_id);
             // Reset mật khẩu về mã nhân viên (Model Employee đã có cast 'hashed', KHÔNG dùng bcrypt() thủ công)
             $employee->password = $id;
             $employee->save();
@@ -360,7 +361,7 @@ class AuthController extends BaseController
         } catch (Throwable $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
 
-            return response()->json(['message' => 'Khôi phục mật khẩu thất bại', 'error' => $e->getMessage()], 500);
+            return \App\Helpers\HandleError::handle($e);
         }
     }
 

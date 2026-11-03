@@ -365,33 +365,11 @@ class EmpRequestFormController extends Controller
 
             $updateData = [];
 
-            // Xử lý upload chữ ký điện tử supervisor
-            if ($request->hasFile('digital_signature_supervisor')) {
-                // Case 1: File upload (multipart/form-data)
-                $file = $request->file('digital_signature_supervisor');
-                $filename = 'digital_signature_supervisor_'.$currentUserId.'_'.time().'.'.$file->getClientOriginalExtension();
-                $path = $file->storeAs('digital_signatures', $filename, 'public');
-                $updateData['digital_signature_supervisor'] = $path;
-            } elseif ($request->has('digital_signature_supervisor') && is_string($request->input('digital_signature_supervisor'))) {
-                // Case 2: Base64 string (từ frontend canvas/signature pad)
-                $base64Data = $request->input('digital_signature_supervisor');
-
-                if (preg_match('/^data:image\/(\w+);base64,/', $base64Data, $matches)) {
-                    $extension = $matches[1];
-                    $base64Data = preg_replace('/^data:image\/\w+;base64,/', '', $base64Data);
-                    $base64Data = str_replace(' ', '+', $base64Data);
-                    $imageData = base64_decode($base64Data);
-
-                    if ($imageData !== false) {
-                        $filename = 'digital_signature_supervisor_'.$currentUserId.'_'.time().'.'.$extension;
-                        $path = 'digital_signatures/'.$filename;
-                        Storage::disk('public')->put($path, $imageData);
-                        $updateData['digital_signature_supervisor'] = $path;
-                    }
-                }
-            }
+            $updateData['digital_signature_supervisor'] = \App\Services\DigitalSignatureStorage::store($request, 'digital_signature_supervisor');
 
             if (empty($updateData['digital_signature_supervisor'])) {
+                DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Vui lòng cung cấp chữ ký điện tử',
@@ -414,6 +392,10 @@ class EmpRequestFormController extends Controller
                 'message' => $completed ? 'Đơn yêu cầu đã được duyệt thành công.' : 'Đã ký tổ trưởng. Đơn đang chờ quản lý duyệt.',
                 'data' => $requestForm,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return \App\Helpers\HandleError::handle($e);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
@@ -582,34 +564,15 @@ class EmpRequestFormController extends Controller
 
             // Xử lý upload chữ ký điện tử theo loại đơn
             // Hỗ trợ cả 2 format: file upload (multipart) VÀ base64 string
-            $signatureFields = $requestForm->getDigitalSignatureFields();
+            $ownerField = $requestForm->type === RequestForm::TYPE_GIAY_UY_QUYEN
+                ? 'digital_signature_delegator' : 'digital_signature_applicant';
+            $signatureFields = [$ownerField => ''];
             $updateData = [];
 
             foreach ($signatureFields as $fieldName => $fieldLabel) {
-                if ($request->hasFile($fieldName)) {
-                    // Case 1: File upload (multipart/form-data)
-                    $file = $request->file($fieldName);
-                    $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$file->getClientOriginalExtension();
-                    $path = $file->storeAs('digital_signatures', $filename, 'public');
+                $path = \App\Services\DigitalSignatureStorage::store($request, $fieldName);
+                if ($path !== null) {
                     $updateData[$fieldName] = $path;
-                } elseif ($request->has($fieldName) && is_string($request->input($fieldName))) {
-                    // Case 2: Base64 string (từ frontend canvas/signature pad)
-                    $base64Data = $request->input($fieldName);
-
-                    // Kiểm tra và xử lý base64 data
-                    if (preg_match('/^data:image\/(\w+);base64,/', $base64Data, $matches)) {
-                        $extension = $matches[1]; // png, jpeg, etc.
-                        $base64Data = preg_replace('/^data:image\/\w+;base64,/', '', $base64Data);
-                        $base64Data = str_replace(' ', '+', $base64Data);
-                        $imageData = base64_decode($base64Data);
-
-                        if ($imageData !== false) {
-                            $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$extension;
-                            $path = 'digital_signatures/'.$filename;
-                            Storage::disk('public')->put($path, $imageData);
-                            $updateData[$fieldName] = $path;
-                        }
-                    }
                 }
 
                 // Lưu thông tin người ký và thời gian ký (nếu có chữ ký mới)
@@ -705,6 +668,10 @@ class EmpRequestFormController extends Controller
                     'email' => $supervisor->email,
                 ] : null,
             ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return \App\Helpers\HandleError::handle($e);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
@@ -737,6 +704,15 @@ class EmpRequestFormController extends Controller
                 'success' => false,
                 'message' => 'Không tìm thấy đơn yêu cầu',
             ], 404);
+        }
+
+        $viewer = (string) Auth::id();
+        $related = array_map('strval', array_filter([
+            $requestForm->employee_id, $requestForm->supervisor_id,
+            $requestForm->authorized_employee_id, $requestForm->manager_approved_by,
+        ]));
+        if (! in_array($viewer, $related, true)) {
+            return response()->json(['success' => false, 'message' => 'Bạn không có quyền xem đơn này'], 403);
         }
 
         return response()->json([
@@ -809,41 +785,14 @@ class EmpRequestFormController extends Controller
 
             // Xử lý cập nhật chữ ký điện tử theo loại đơn
             // Hỗ trợ cả 2 format: file upload (multipart) VÀ base64 string
-            $signatureFields = $requestForm->getDigitalSignatureFields();
+            $ownerField = $requestForm->type === RequestForm::TYPE_GIAY_UY_QUYEN
+                ? 'digital_signature_delegator' : 'digital_signature_applicant';
+            $signatureFields = [$ownerField => ''];
 
             foreach ($signatureFields as $fieldName => $fieldLabel) {
-                if ($request->hasFile($fieldName)) {
-                    // Case 1: File upload (multipart/form-data)
-                    // Xóa file cũ nếu có
-                    if ($requestForm->$fieldName && Storage::disk('public')->exists($requestForm->$fieldName)) {
-                        Storage::disk('public')->delete($requestForm->$fieldName);
-                    }
-
-                    $file = $request->file($fieldName);
-                    $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$file->getClientOriginalExtension();
-                    $updateData[$fieldName] = $file->storeAs('digital_signatures', $filename, 'public');
-                } elseif ($request->has($fieldName) && is_string($request->input($fieldName))) {
-                    // Case 2: Base64 string (từ frontend canvas/signature pad)
-                    $base64Data = $request->input($fieldName);
-
-                    if (preg_match('/^data:image\/(\w+);base64,/', $base64Data, $matches)) {
-                        // Xóa file cũ nếu có
-                        if ($requestForm->$fieldName && Storage::disk('public')->exists($requestForm->$fieldName)) {
-                            Storage::disk('public')->delete($requestForm->$fieldName);
-                        }
-
-                        $extension = $matches[1];
-                        $base64Data = preg_replace('/^data:image\/\w+;base64,/', '', $base64Data);
-                        $base64Data = str_replace(' ', '+', $base64Data);
-                        $imageData = base64_decode($base64Data);
-
-                        if ($imageData !== false) {
-                            $filename = $fieldName.'_'.Auth::id().'_'.time().'.'.$extension;
-                            $path = 'digital_signatures/'.$filename;
-                            Storage::disk('public')->put($path, $imageData);
-                            $updateData[$fieldName] = $path;
-                        }
-                    }
+                $path = \App\Services\DigitalSignatureStorage::store($request, $fieldName);
+                if ($path !== null) {
+                    $updateData[$fieldName] = $path;
                 }
 
                 // Lưu thông tin người ký và thời gian ký (nếu có chữ ký mới)
@@ -872,6 +821,8 @@ class EmpRequestFormController extends Controller
                 'message' => 'Đơn yêu cầu đã được cập nhật thành công',
                 'data' => $requestForm,
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return \App\Helpers\HandleError::handle($e);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
 
@@ -1058,18 +1009,7 @@ class EmpRequestFormController extends Controller
             if ($currentUserId == $requestForm->employee_id) {
                 // Người tạo đơn = delegator
                 if ($request->hasFile('digital_signature_delegator')) {
-                    $file = $request->file('digital_signature_delegator');
-
-                    // Delete old signature if exists
-                    if ($requestForm->digital_signature_delegator && Storage::disk('public')->exists($requestForm->digital_signature_delegator)) {
-                        Storage::disk('public')->delete($requestForm->digital_signature_delegator);
-                    }
-
-                    // Store new signature
-                    $filename = time().'_delegator_'.$file->getClientOriginalName();
-                    $path = $file->storeAs('signatures', $filename, 'public');
-
-                    $updateData['digital_signature_delegator'] = $path;
+                    $updateData['digital_signature_delegator'] = \App\Services\DigitalSignatureStorage::store($request, 'digital_signature_delegator');
                     $updateData['delegator_approved_by'] = $currentUserId;
                     $updateData['delegator_approved_at'] = now();
                     $hasNewSignature = true;
@@ -1078,18 +1018,7 @@ class EmpRequestFormController extends Controller
             } elseif ($currentUserId == $authorizedEmployeeId) {
                 // Người được ủy quyền = authorized
                 if ($request->hasFile('digital_signature_authorized')) {
-                    $file = $request->file('digital_signature_authorized');
-
-                    // Delete old signature if exists
-                    if ($requestForm->digital_signature_authorized && Storage::disk('public')->exists($requestForm->digital_signature_authorized)) {
-                        Storage::disk('public')->delete($requestForm->digital_signature_authorized);
-                    }
-
-                    // Store new signature
-                    $filename = time().'_authorized_'.$file->getClientOriginalName();
-                    $path = $file->storeAs('signatures', $filename, 'public');
-
-                    $updateData['digital_signature_authorized'] = $path;
+                    $updateData['digital_signature_authorized'] = \App\Services\DigitalSignatureStorage::store($request, 'digital_signature_authorized');
                     $updateData['authorized_approved_by'] = $currentUserId;
                     $updateData['authorized_approved_at'] = now();
                     $hasNewSignature = true;
@@ -1098,6 +1027,8 @@ class EmpRequestFormController extends Controller
             }
 
             if (! $hasNewSignature) {
+                DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Không tìm thấy file chữ ký để upload',
@@ -1131,6 +1062,10 @@ class EmpRequestFormController extends Controller
                     ] : null,
                 ],
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return \App\Helpers\HandleError::handle($e);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();
@@ -1262,18 +1197,7 @@ class EmpRequestFormController extends Controller
 
             // Xử lý upload file chữ ký
             if ($request->hasFile('digital_signature_authorized')) {
-                $file = $request->file('digital_signature_authorized');
-
-                // Delete old signature if exists
-                if ($requestForm->digital_signature_authorized && Storage::disk('public')->exists($requestForm->digital_signature_authorized)) {
-                    Storage::disk('public')->delete($requestForm->digital_signature_authorized);
-                }
-
-                // Store new signature
-                $filename = time().'_authorized_'.$file->getClientOriginalName();
-                $path = $file->storeAs('signatures', $filename, 'public');
-
-                $updateData['digital_signature_authorized'] = $path;
+                $updateData['digital_signature_authorized'] = \App\Services\DigitalSignatureStorage::store($request, 'digital_signature_authorized');
                 $updateData['status'] = RequestForm::STATUS_AUTHORIZED_APPROVED;
                 $updateData['authorized_approved_by'] = $currentUserId;
                 $updateData['authorized_approved_at'] = now();
@@ -1300,6 +1224,10 @@ class EmpRequestFormController extends Controller
                     'authorized_at' => $requestForm->authorized_approved_at,
                 ],
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            return \App\Helpers\HandleError::handle($e);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             DB::rollBack();

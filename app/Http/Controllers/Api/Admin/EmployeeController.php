@@ -198,6 +198,8 @@ class EmployeeController extends BaseController
                 'card_photo' => 'required|image|mimes:jpeg,png,jpg',
             ]);
 
+            \App\Services\EmployeePrivilegeGuard::check($validated['role_id']);
+
             // Process avatar
             // if ($request->hasFile('photo')) {
             //     $file = $request->file('photo');
@@ -289,6 +291,11 @@ class EmployeeController extends BaseController
                 'card_photo' => 'sometimes|image|mimes:jpeg,png,jpg',
             ]);
 
+            \App\Services\EmployeePrivilegeGuard::check($employee->role_id);
+            if (isset($validated['role_id'])) {
+                \App\Services\EmployeePrivilegeGuard::check($validated['role_id']);
+            }
+
             $oldPhoto = $employee->photo;
             $oldCardPhoto = $employee->card_photo;
 
@@ -310,7 +317,7 @@ class EmployeeController extends BaseController
             // if ($oldPhoto) {
             //     Storage::delete('public/employee/'.$oldPhoto);
             // }
-            if ($oldCardPhoto) {
+            if ($oldCardPhoto && $request->hasFile('card_photo')) {
                 Storage::delete('public/employee/'.$oldCardPhoto);
             }
 
@@ -332,6 +339,7 @@ class EmployeeController extends BaseController
         try {
             $employee = Employee::findOrFail($id);
 
+            \App\Services\EmployeePrivilegeGuard::check($employee->role_id);
             $employee->delete();
 
             DB::commit();
@@ -423,6 +431,7 @@ class EmployeeController extends BaseController
         DB::beginTransaction();
         try {
             $employee = Employee::onlyTrashed()->findOrFail($id);
+            \App\Services\EmployeePrivilegeGuard::check($employee->role_id);
 
             $employee->restore();
 
@@ -445,6 +454,7 @@ class EmployeeController extends BaseController
         DB::beginTransaction();
         try {
             $employee = Employee::onlyTrashed()->lockForUpdate()->findOrFail($id);
+            \App\Services\EmployeePrivilegeGuard::check($employee->role_id);
 
             // Bảo vệ Super Admin & Giám đốc
             if (in_array($employee->role_id, [1, 21])) {

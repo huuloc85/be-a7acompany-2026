@@ -240,7 +240,15 @@ class StampController extends BaseController
      */
     private function approveExistingStamp(int $stampId)
     {
-        $originalStamp = SendStamp::findOrFail($stampId);
+        $originalStamp = SendStamp::lockForUpdate()->findOrFail($stampId);
+        if ($originalStamp->status === 'approve') {
+            DB::commit();
+
+            return response()->json(['status' => 'success', 'message' => 'Tem đã được duyệt.', 'data' => $originalStamp]);
+        }
+        if ($originalStamp->status !== 'pending') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['stamp_id' => 'Yêu cầu in tem đã được xử lý.']);
+        }
 
         // Kiểm tra nếu binStart có dấu phẩy thì tách thành nhiều records
         if (strpos($originalStamp->binStart, ',') !== false) {
@@ -269,26 +277,32 @@ class StampController extends BaseController
      */
     private function createStampsFromBinList(array $validation)
     {
-        $binList = explode(',', $validation['binStart']);
+        \App\Models\Product::lockForUpdate()->findOrFail($validation['productId']);
+        $binList = array_unique($this->getStampRange($validation['binStart'], $validation['binCount']));
         $createdStamps = collect();
 
         foreach ($binList as $bin) {
             $bin = trim($bin);
 
-            $stamp = SendStamp::updateOrCreate([
+            $key = [
                 'product_id' => $validation['productId'],
-                'manager_id' => Auth()->user()->id,
-                'employee_id' => $validation['employee_id'] ?? Auth()->user()->id,
                 'type' => $validation['type'],
                 'date' => $validation['date'],
                 'shift' => $validation['shift'] ?? 1,
                 'binStart' => $bin, // Mỗi bin tách thành record riêng
-                'manager_time' => Carbon::now()->format('H:i:s'),
                 'status' => 'approve',
-            ], [
-                'binCount' => 1, // Mỗi record chỉ có 1 bin
                 'purpose' => $validation['purpose'] ?? null,
-            ]);
+            ];
+            $values = [
+                'manager_id' => Auth()->user()->id,
+                'employee_id' => $validation['employee_id'] ?? Auth()->user()->id,
+                'manager_time' => Carbon::now()->format('H:i:s'),
+                'binCount' => 1, // Mỗi record chỉ có 1 bin
+            ];
+            // In lại chủ động là một lần in mới, không gộp vào lịch sử trước đó.
+            $stamp = ($validation['purpose'] ?? null) === 'reprint'
+                ? SendStamp::create([...$key, ...$values])
+                : SendStamp::firstOrCreate($key, $values);
 
             $createdStamps->push($stamp);
         }

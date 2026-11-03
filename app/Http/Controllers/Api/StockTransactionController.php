@@ -96,7 +96,10 @@ class StockTransactionController extends Controller
                 'employee_id' => 'nullable|exists:employees,id',
             ]);
 
-            $storageProduct = StorageProduct::findOrFail($request->storage_product_id);
+            $storageProduct = StorageProduct::lockForUpdate()->findOrFail($request->storage_product_id);
+            if ($request->type === 'out' && $request->quantity > $storageProduct->quantity) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['quantity' => 'Số lượng xuất vượt tồn kho.']);
+            }
 
             $transaction = StockTransaction::create([
                 'storage_product_id' => $request->storage_product_id,
@@ -109,9 +112,6 @@ class StockTransactionController extends Controller
                 $storageProduct->increment('quantity', $request->quantity);
             } else {
                 $storageProduct->decrement('quantity', $request->quantity);
-                if ($storageProduct->quantity < 0) {
-                    $storageProduct->update(['quantity' => 0]);
-                }
             }
 
             DB::commit();
@@ -153,15 +153,15 @@ class StockTransactionController extends Controller
     {
         DB::beginTransaction();
         try {
-            $transaction = StockTransaction::findOrFail($id);
-            $storageProduct = $transaction->storageProduct;
+            $transaction = StockTransaction::lockForUpdate()->findOrFail($id);
+            $storageProduct = StorageProduct::lockForUpdate()->findOrFail($transaction->storage_product_id);
 
             if ($storageProduct) {
                 if ($transaction->type === 'in') {
-                    $storageProduct->decrement('quantity', $transaction->quantity);
-                    if ($storageProduct->quantity < 0) {
-                        $storageProduct->update(['quantity' => 0]);
+                    if ($transaction->quantity > $storageProduct->quantity) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['quantity' => 'Không thể xóa giao dịch nhập vì hàng đã được xuất.']);
                     }
+                    $storageProduct->decrement('quantity', $transaction->quantity);
                 } else {
                     $storageProduct->increment('quantity', $transaction->quantity);
                 }
@@ -303,7 +303,8 @@ class StockTransactionController extends Controller
                 return response()->json(['error' => ['code' => 422, 'message' => 'Format barcode không đúng']], 422);
             }
 
-            $product = Product::findOrFail($barcodeData['product_id']);
+            DB::beginTransaction();
+            $product = Product::lockForUpdate()->findOrFail($barcodeData['product_id']);
             $lotCode = $this->generateLotCode($barcodeData['date'], $barcodeData['shift'], $barcodeData['separator']);
 
             $storageProduct = StorageProduct::firstOrCreate(
@@ -319,6 +320,7 @@ class StockTransactionController extends Controller
                 ]
             );
 
+            DB::commit();
             $storageProduct->load('product');
 
             return response()->json([
@@ -328,6 +330,10 @@ class StockTransactionController extends Controller
                 'quantity_per_bin' => $product->quanEntityBin ?? 0,
             ]);
         } catch (\Throwable $th) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
             return HandleError::handle($th);
         }
     }
@@ -338,7 +344,7 @@ class StockTransactionController extends Controller
     public function scanIn(Request $request): JsonResponse
     {
         try {
-            $request->validate(['barcode' => 'required|string']);
+            $request->validate(['barcode' => 'required|string', 'quantity' => 'sometimes|required|integer|min:1']);
 
             $barcodeData = $this->parseBarcode($request->barcode);
             if (! $barcodeData) {
@@ -349,6 +355,9 @@ class StockTransactionController extends Controller
 
             $lotCode = $this->generateLotCode($barcodeData['date'], $barcodeData['shift'], $barcodeData['separator']);
 
+            DB::beginTransaction();
+            $product = Product::lockForUpdate()->findOrFail($barcodeData['product_id']);
+
             // Check trùng
             $exists = StorageProduct::where('product_id', $barcodeData['product_id'])
                 ->where('lot', $lotCode)
@@ -357,21 +366,24 @@ class StockTransactionController extends Controller
                 ->exists();
 
             if ($exists) {
+                DB::rollBack();
+
                 return response()->json([
                     'error' => ['code' => 409, 'message' => 'Thùng này đã được nhập kho trước đó'],
                 ], 409);
             }
 
-            $product = Product::select('id', 'code', 'name', 'quanEntityBin')->findOrFail($barcodeData['product_id']);
             $quantity = $request->input('quantity', $product->quanEntityBin ?? 0);
+            if ($quantity < 1) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['quantity' => 'Số lượng nhập phải lớn hơn 0.']);
+            }
             $employee = auth()->user();
-
-            DB::beginTransaction();
 
             $storageProduct = StorageProduct::firstOrCreate(
                 ['product_id' => $barcodeData['product_id'], 'lot' => $lotCode, 'bin' => $barcodeData['bin_number']],
                 ['barcode' => $request->barcode, 'quantity' => 0, 'employee_id' => auth()->id()]
             );
+            $storageProduct = StorageProduct::lockForUpdate()->findOrFail($storageProduct->id);
             $newQuantity = (int) $storageProduct->quantity + (int) $quantity;
 
             $transaction = StockTransaction::create([
@@ -426,7 +438,7 @@ class StockTransactionController extends Controller
     public function scanOut(Request $request): JsonResponse
     {
         try {
-            $request->validate(['barcode' => 'required|string']);
+            $request->validate(['barcode' => 'required|string', 'quantity' => 'sometimes|required|integer|min:1']);
 
             $barcodeData = $this->parseBarcode($request->barcode);
             if (! $barcodeData) {
@@ -446,10 +458,14 @@ class StockTransactionController extends Controller
                 ->where('lot', $lotCode)
                 ->where('bin', $barcodeData['bin_number'])
                 ->where('quantity', '>', 0)
+                ->lockForUpdate()
                 ->firstOrFail();
 
             $quantityOut = $request->input('quantity', $storageProduct->quantity);
-            $remainingQuantity = max(0, (int) $storageProduct->quantity - (int) $quantityOut);
+            if ($quantityOut > $storageProduct->quantity) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['quantity' => 'Số lượng xuất vượt tồn kho.']);
+            }
+            $remainingQuantity = (int) $storageProduct->quantity - (int) $quantityOut;
 
             $transaction = StockTransaction::create([
                 'storage_product_id' => $storageProduct->id,

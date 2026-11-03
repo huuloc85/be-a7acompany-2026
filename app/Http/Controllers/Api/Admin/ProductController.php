@@ -579,11 +579,11 @@ class ProductController extends BaseController
     // update detailProduct
     public function updateDetailProduct(Request $request)
     {
-        if ($request->quantity == 0) {
-            return response()->json([
-                'message' => 'Bạn không thể cập nhật sản lượng là 0!',
-            ], 400);
-        }
+        $request->validate([
+            'dailyId' => 'required|integer',
+            'quantity' => 'required|integer|min:1',
+            'status' => 'required|integer|in:1,2,3,6,8',
+        ]);
 
         try {
             if ((int) $request->status === 8) {
@@ -598,6 +598,9 @@ class ProductController extends BaseController
             }
 
             DB::beginTransaction();
+            Product::lockForUpdate()->findOrFail($daily->product_id);
+            $daily = $daily->newQuery()->lockForUpdate()->findOrFail($daily->id);
+            $delta = $request->quantity - $daily->quantity;
             $date = Carbon::parse($daily->date);
             $month = $date->format('m');
             $year = $date->format('Y');
@@ -608,34 +611,35 @@ class ProductController extends BaseController
             $daily->save();
 
             // tính lại totalDaily từ DailyQuantity
-            $sumDaily = DailyQuantity::where('product_id', $request->product_id)
+            $sumDaily = DailyQuantity::where('product_id', $daily->product_id)
                 ->where('date', $daily->date)
-                ->where('status', $request->status)
-                ->sum('quantity');
+                ->where('status', $daily->status)
+                ->lockForUpdate()->get()->sum('quantity');
 
             $totalDaily = TotalDailyQuantity::updateOrCreate(
                 [
-                    'product_id' => $request->product_id,
+                    'product_id' => $daily->product_id,
                     'date' => $daily->date,
-                    'status' => $request->status,
+                    'status' => $daily->status,
                 ],
                 ['totalQuan' => $sumDaily]
             );
 
-            // tính lại totalMonth từ DailyQuantity
-            $sumMonth = DailyQuantity::where('product_id', $request->product_id)
+            // Giữ phần điều chỉnh tổng tháng đã nhập tay, chỉ cộng chênh lệch.
+            $sumMonth = DailyQuantity::where('product_id', $daily->product_id)
                 ->whereYear('date', $year)
                 ->whereMonth('date', $month)
-                ->where('status', $request->status)
-                ->sum('quantity');
+                ->where('status', $daily->status)
+                ->lockForUpdate()->get()->sum('quantity');
 
-            $totalMonth = TotalMonthQuantity::updateOrCreate(
+            $totalMonth = TotalMonthQuantity::lockForUpdate()->updateOrCreate(
                 [
-                    'product_id' => $request->product_id,
+                    'product_id' => $daily->product_id,
                     'month' => $monthYear,
-                    'status' => $request->status,
+                    'status' => $daily->status,
                 ],
-                ['totalQuan' => $sumMonth]
+                ['totalQuan' => (TotalMonthQuantity::where('product_id', $daily->product_id)
+                    ->where('month', $monthYear)->where('status', $daily->status)->lockForUpdate()->value('totalQuan') ?? ($sumMonth - $delta)) + $delta]
             );
 
             DB::commit();
@@ -647,7 +651,9 @@ class ProductController extends BaseController
                 'totalMonth' => $totalMonth,
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
             Log::error('errors: '.$e->getMessage().' line: '.$e->getLine());
 
@@ -669,12 +675,15 @@ class ProductController extends BaseController
 
             $detail = DailyQuantity::findOrFail($id);
 
+            Product::lockForUpdate()->findOrFail($detail->product_id);
+            $detail = $detail->newQuery()->lockForUpdate()->findOrFail($detail->id);
+
             $monthYear = Carbon::parse($detail->date)->format('m-Y');
 
             // Update quantity total day
             $totalDaily = TotalDailyQuantity::where('product_id', $detail->product_id)
                 ->where('date', $detail->date)
-                ->where('status', $detail->status)->first();
+                ->where('status', $detail->status)->lockForUpdate()->first();
             if ($totalDaily != null) {
                 $newTotalDaily = $totalDaily->totalQuan - $detail->quantity;
                 if ($newTotalDaily > 0) {
@@ -688,15 +697,10 @@ class ProductController extends BaseController
             // Update quantity total month
             $totalMonth = TotalMonthQuantity::where('product_id', $detail->product_id)
                 ->where('month', $monthYear)
-                ->where('status', $detail->status)->first();
+                ->where('status', $detail->status)->lockForUpdate()->first();
             if ($totalMonth != null) {
-                $newTotalMonth = $totalMonth->totalQuan - $detail->quantity;
-                if ($newTotalMonth > 0) {
-                    $totalMonth->totalQuan = $newTotalMonth;
-                    $totalMonth->save();
-                } else {
-                    $totalMonth->delete();
-                }
+                $totalMonth->totalQuan -= $detail->quantity;
+                $totalMonth->save();
             }
 
             $detail->delete();
@@ -729,6 +733,8 @@ class ProductController extends BaseController
                 ], 404);
             }
 
+            Product::lockForUpdate()->findOrFail($daily->product_id);
+            $daily = $daily->newQuery()->lockForUpdate()->findOrFail($daily->id);
             $daily->quantity = $request->quantity;
             $daily->employee_id = auth()->id();
             $daily->save();
@@ -752,6 +758,8 @@ class ProductController extends BaseController
     private function deletePoDetailProduct($id)
     {
         $detail = DailyQuantityPO::findOrFail($id);
+        Product::lockForUpdate()->findOrFail($detail->product_id);
+        $detail = $detail->newQuery()->lockForUpdate()->findOrFail($detail->id);
         $date = $detail->date;
         $productId = $detail->product_id;
         $status = $detail->status;
@@ -775,31 +783,23 @@ class ProductController extends BaseController
         $sumDaily = DailyQuantityPO::where('product_id', $productId)
             ->where('date', $date)
             ->where('status', $status)
-            ->sum('quantity');
+            ->lockForUpdate()->get()->sum('quantity');
 
-        if ($sumDaily > 0) {
-            return TotalDailyQuantityPO::updateOrCreate(
-                [
-                    'product_id' => $productId,
-                    'date' => $date,
-                    'status' => $status,
-                ],
-                ['totalQuan' => $sumDaily]
-            );
-        }
-
-        TotalDailyQuantityPO::where('product_id', $productId)
-            ->where('date', $date)
-            ->where('status', $status)
-            ->get()->each->delete();
-
-        return null;
+        // Giữ tổng 0 để tháng đã dùng PO không quay lại nguồn xuất cũ.
+        return TotalDailyQuantityPO::lockForUpdate()->updateOrCreate(
+            ['product_id' => $productId, 'date' => $date, 'status' => $status],
+            ['totalQuan' => $sumDaily]
+        );
     }
 
     // addQuantityDetailProduct
     public function addQuantityDetailProduct(Request $request)
     {
         $request->validate([
+            'product_id' => 'required|integer|exists:products,id',
+            'quantity' => 'required|integer|min:1',
+            'status' => 'required|integer|in:1,2,3,6',
+            'date' => 'nullable|date_format:Y-m-d',
             'shift' => 'required_if:status,1|nullable|in:Ca 1,Ca 2',
         ], [
             'shift.required_if' => 'Vui lòng chọn ca làm việc.',
@@ -812,6 +812,8 @@ class ProductController extends BaseController
             $month = Carbon::parse($date)->format('m-Y');
             $year = Carbon::parse($date)->format('Y');
             $monthNum = Carbon::parse($date)->format('m');
+
+            Product::lockForUpdate()->findOrFail($request->product_id);
 
             // Thêm mới DailyQuantity
             $dailyQuan = new DailyQuantity;
@@ -827,7 +829,7 @@ class ProductController extends BaseController
             $sumDaily = DailyQuantity::where('product_id', $request->product_id)
                 ->where('date', $date)
                 ->where('status', $request->status)
-                ->sum('quantity');
+                ->lockForUpdate()->get()->sum('quantity');
 
             $totalDaily = TotalDailyQuantity::updateOrCreate(
                 [
@@ -838,20 +840,21 @@ class ProductController extends BaseController
                 ['totalQuan' => $sumDaily]
             );
 
-            // Tính lại TotalMonthQuantity từ DailyQuantity
+            // Giữ phần điều chỉnh tổng tháng đã nhập tay, chỉ cộng lượng mới.
             $sumMonth = DailyQuantity::where('product_id', $request->product_id)
                 ->whereYear('date', $year)
                 ->whereMonth('date', $monthNum)
                 ->where('status', $request->status)
-                ->sum('quantity');
+                ->lockForUpdate()->get()->sum('quantity');
 
-            $totalMonth = TotalMonthQuantity::updateOrCreate(
+            $totalMonth = TotalMonthQuantity::lockForUpdate()->updateOrCreate(
                 [
                     'product_id' => $request->product_id,
                     'month' => $month,
                     'status' => $request->status,
                 ],
-                ['totalQuan' => $sumMonth]
+                ['totalQuan' => (TotalMonthQuantity::where('product_id', $request->product_id)
+                    ->where('month', $month)->where('status', $request->status)->lockForUpdate()->value('totalQuan') ?? ($sumMonth - $request->quantity)) + $request->quantity]
             );
 
             DB::commit();

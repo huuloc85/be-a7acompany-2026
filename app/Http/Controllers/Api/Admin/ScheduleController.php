@@ -83,6 +83,8 @@ class ScheduleController extends BaseController
             $countCategoryCelender = CategoryCelender::count();
 
             if ($countCategoryCelender <= 0) {
+                DB::rollBack();
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Bạn phải thêm danh mục lịch làm việc trước khi thêm lịch làm việc!',
@@ -95,6 +97,8 @@ class ScheduleController extends BaseController
                 ->get();
 
             if (count($employees) <= 0) {
+                DB::rollBack();
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Bạn phải thêm nhân sự trước khi thêm lịch làm việc!',
@@ -142,6 +146,8 @@ class ScheduleController extends BaseController
             $celender = Celender::find($id);
 
             if (! $celender) {
+                DB::rollBack();
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Không tìm thấy lịch làm việc',

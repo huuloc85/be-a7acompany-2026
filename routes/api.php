@@ -56,10 +56,10 @@ require __DIR__.'/cap7a.php';
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
-Route::post('/updateDataCC', [App\Http\Controllers\AttendanceRecordController::class, 'updateDataCC'])->name('updateDataCC');
+Route::middleware(['auth:sanctum', 'api.can:view_attendance'])->post('/updateDataCC', [App\Http\Controllers\AttendanceRecordController::class, 'updateDataCC'])->name('updateDataCC');
 
 // Attendance Records (Chấm Công)
-Route::get('/acs-events/today', [AttendanceRecordController::class, 'fetchTodayEvents']);
+Route::middleware(['auth:sanctum', 'api.can:view_attendance'])->get('/acs-events/today', [AttendanceRecordController::class, 'fetchTodayEvents']);
 
 // Đăng nhập
 Route::post('/login', [AuthController::class, 'authLogin'])->name('auth.login');

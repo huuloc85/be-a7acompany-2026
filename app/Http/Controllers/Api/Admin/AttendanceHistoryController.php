@@ -110,7 +110,12 @@ class AttendanceHistoryController extends BaseController
                 'date' => 'sometimes|date',
                 'time' => 'sometimes|date_format:H:i:s',
             ]);
-            $record->update($request->all());
+            $datetime = Carbon::parse($request->input('datetime'));
+            $record->update([
+                ...$request->only('employee_code', 'datetime'),
+                'date' => $datetime->format('Y-m-d'),
+                'time' => $datetime->format('H:i:s'),
+            ]);
 
             DB::commit();
 

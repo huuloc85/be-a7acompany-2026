@@ -14,13 +14,20 @@ class ProductInventoryService
     {
         $from = Carbon::createFromFormat('!m-Y', $fromMonth);
         $end = Carbon::now()->startOfMonth();
-        if ($from->gte($end)) {
+        if ($from->gt($end)) {
             return [];
         }
 
         return DB::transaction(function () use ($productId, $from, $end, $dryRun) {
             Product::whereKey($productId)->lockForUpdate()->firstOrFail();
-            $records = TotalMonthQuantity::where('product_id', $productId)->get();
+            $records = TotalMonthQuantity::where('product_id', $productId)->lockForUpdate()->get();
+            $initializeCurrent = $from->equalTo($end);
+            if ($initializeCurrent) {
+                if ($records->where('month', $end->format('m-Y'))->whereIn('status', [4, 5])->pluck('status')->unique()->count() === 2) {
+                    return [];
+                }
+                $from = $from->copy()->subMonth();
+            }
             // Keep the opening balance of the source month as the baseline.
             // If that month is missing, bridge from the nearest earlier opening.
             $seed = $records->where('status', 4)
@@ -37,7 +44,7 @@ class ProductInventoryService
                 ->whereIn('status', [3, 8])
                 ->where('date', '>=', $month->toDateString())
                 ->where('date', '<', $end->toDateString())
-                ->get()->groupBy(fn ($row) => Carbon::parse($row->date)->format('m-Y'));
+                ->lockForUpdate()->get()->groupBy(fn ($row) => Carbon::parse($row->date)->format('m-Y'));
             $opening = (int) $seed->totalQuan;
             $checkedOpening = (int) $monthly->get($seed->month)->firstWhere('status', 5)?->totalQuan;
             $changes = [];
@@ -57,6 +64,9 @@ class ProductInventoryService
 
                 foreach ([4 => $opening, 5 => $checkedOpening] as $status => $quantity) {
                     $old = $monthly->get($nextKey, collect())->firstWhere('status', $status);
+                    if ($initializeCurrent && $old) {
+                        continue;
+                    }
                     if ($old && (int) $old->totalQuan === $quantity) {
                         continue;
                     }
