@@ -14,10 +14,11 @@ use App\Models\RequestForm;
 use App\Models\Role;
 use App\Models\SalaryManager;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 
 class DashboardController extends BaseController
 {
-    public function index()
+    public function index(Request $request)
     {
         $today = Carbon::today();
         $startOfMonth = $today->copy()->startOfMonth();
@@ -28,20 +29,23 @@ class DashboardController extends BaseController
             ->count();
         $totalRole = Role::whereNotIn('id', [15, 16, 17])->count();
 
-        $topUsers = LoginHistory::select('employee_name')
-            ->selectRaw('COUNT(*) as login_count')
-            ->groupBy('employee_name')
-            ->orderByDesc('login_count')
-            ->limit(10)
-            ->get();
+        $topUsers = [];
+        if ($request->boolean('include_top_users', true)) {
+            $topUsers = LoginHistory::select('employee_name')
+                ->selectRaw('COUNT(*) as login_count')
+                ->groupBy('employee_name')
+                ->orderByDesc('login_count')
+                ->limit(10)
+                ->get();
+        }
 
         $totalSalary = SalaryManager::count();
         $totalCelender = Celender::count();
         $totalProduct = Product::count();
-        $totalHistory = LoginHistory::whereDate('date', $today)->count();
+        $totalHistory = LoginHistory::where('date', $today->toDateString())->count();
         $totalPlan = ProductionPlan::count();
         $totalRecord = AttendanceRecord::count();
-        $totalCheckEmployee = CheckEmployee::whereDate('date', $today)->count();
+        $totalCheckEmployee = CheckEmployee::where('date', $today->toDateString())->count();
         $totalRequestForms = RequestForm::count();
         $totalFeedback = (int) Feedback::count();
 
