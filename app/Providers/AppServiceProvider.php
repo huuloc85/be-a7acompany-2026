@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use Illuminate\Pagination\Paginator;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -23,8 +22,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        DB::statement("SET time_zone = '+07:00'");
-
         Paginator::defaultView('vendor.pagination.bootstrap-4');
 
         $layout_dashboard = config('app.layout');
