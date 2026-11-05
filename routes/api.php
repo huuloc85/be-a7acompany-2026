@@ -179,7 +179,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::delete('/{id}', [SalaryController::class, 'deleteSalary']);
     });
 
-    Route::middleware(['api.can:view_schedule_categories'])->prefix('schedule-categories')->group(function () {
+    Route::middleware([\App\Http\Middleware\API\CheckScheduleAccess::class.':view_schedule_categories'])->prefix('schedule-categories')->group(function () {
         Route::get('/', [ScheduleCategoryController::class, 'index']);   // Lấy danh sách danh mục
         Route::post('/', [ScheduleCategoryController::class, 'store']);  // Thêm mới danh mục
         Route::get('/{id}', [ScheduleCategoryController::class, 'show']);  // Lấy chi tiết danh mục
@@ -187,7 +187,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::delete('/{id}', [ScheduleCategoryController::class, 'delete']); // Xóa danh mục
     });
 
-    Route::middleware(['api.can:view_schedule'])->prefix('schedules')->group(function () {
+    Route::middleware([\App\Http\Middleware\API\CheckScheduleAccess::class])->prefix('schedules')->group(function () {
         Route::prefix('detail')->group(function () {
             Route::get('/', [ScheduleDetailController::class, 'index']);
             //     Route::get('/{id}', [ScheduleDetailController::class, 'detail']);
