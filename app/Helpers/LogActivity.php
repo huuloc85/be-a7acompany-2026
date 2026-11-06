@@ -55,7 +55,7 @@ class LogActivity
         $date = Carbon::now()->format('Y-m-d');
         $currentMonthYear = Carbon::now()->format('Y-m');
         // check xem nhân viên đó có làm ca hay không
-        if ($user->id != '25060400') {
+        if ($user->id != '25060406') {
             if ($user->calendar_category_id != 2) {
                 $currentDateTime = Carbon::now();
                 $hour = $currentDateTime->hour;

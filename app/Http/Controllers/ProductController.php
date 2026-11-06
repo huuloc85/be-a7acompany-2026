@@ -516,7 +516,7 @@ class ProductController extends Controller
             $status = 0;
             $employeeCode = Auth()->user()->id;
             $categoryCalender = Auth()->user()->category_celender->id;
-            if ($employeeCode != '25060400') {
+            if ($employeeCode != '25060406') {
                 if ($categoryCalender != 2) {
                     $status = 1;
                 } else {

@@ -166,7 +166,7 @@ class AdminRequestFormController extends Controller
         }
 
         if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval()
-            && (in_array((string) Auth::id(), ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'], true)
+            && (in_array((string) Auth::id(), ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'], true)
                 || (string) Auth::id() === (string) $requestForm->employee_id)) {
             return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);
         }
@@ -194,7 +194,7 @@ class AdminRequestFormController extends Controller
                 $currentUserId = Auth::id();
 
                 // Danh sách supervisor employee IDs
-                $supervisorIds = [25060400, 22120700, 22120900, 22120300, 22122800, 22121800];
+                $supervisorIds = [25060406, 22120703, 22120905, 22120304, 22122809, 22121822];
 
                 if ($requestForm->type === RequestForm::TYPE_GIAY_UY_QUYEN) {
                     // Đơn ủy quyền: Admin không ký thêm chữ ký, chỉ duyệt

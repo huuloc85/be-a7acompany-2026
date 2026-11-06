@@ -52,12 +52,12 @@ class RequestFormSupervisorAccessTest extends TestCase
 
     public static function supervisorCodes(): iterable
     {
-        yield ['19010400', '25060400'];
-        yield ['20020700', '22120700'];
-        yield ['18010900', '22120900'];
-        yield ['19010300', '22120300'];
-        yield ['20102800', '22122800'];
-        yield ['22011800', '22121800'];
+        yield ['19010400', '25060406'];
+        yield ['20020700', '22120703'];
+        yield ['18010900', '22120905'];
+        yield ['19010300', '22120304'];
+        yield ['20102800', '22122809'];
+        yield ['22011800', '22121822'];
     }
 
     #[DataProvider('supervisorCodes')]
@@ -109,7 +109,7 @@ class RequestFormSupervisorAccessTest extends TestCase
     #[DataProvider('recordEndpoints')]
     public function test_new_supervisor_passes_access_check(string $method): void
     {
-        Auth::shouldReceive('id')->andReturn('22121800');
+        Auth::shouldReceive('id')->andReturn('22121822');
         $model = Mockery::mock('alias:App\Models\RequestForm');
         if ($method === 'getDetailAsSupervisor') {
             $model->shouldReceive('with')->once()->andReturnSelf();
@@ -123,13 +123,13 @@ class RequestFormSupervisorAccessTest extends TestCase
     #[DataProvider('recordEndpoints')]
     public function test_new_supervisor_cannot_access_another_supervisors_record(string $method): void
     {
-        Auth::shouldReceive('id')->andReturn('22121800');
+        Auth::shouldReceive('id')->andReturn('22121822');
         $model = Mockery::mock('alias:App\Models\RequestForm');
         if ($method === 'getDetailAsSupervisor') {
             $model->shouldReceive('with')->once()->andReturnSelf();
         }
         $model->shouldReceive('find')->with('123')->once()->andReturn(
-            (object) ['supervisor_id' => '25060400']
+            (object) ['supervisor_id' => '25060406']
         );
 
         self::assertSame(403, $this->invokeEndpoint($method)->getStatusCode());
@@ -147,14 +147,14 @@ class RequestFormSupervisorAccessTest extends TestCase
 
     public function test_new_supervisors_list_is_scoped_to_assigned_requests(): void
     {
-        Auth::shouldReceive('id')->andReturn('22121800');
+        Auth::shouldReceive('id')->andReturn('22121822');
         $model = Mockery::mock('alias:App\Models\RequestForm');
         $query = Mockery::mock();
         $model->shouldReceive('query')->once()->andReturn($query);
-        $query->shouldReceive('where')->with('supervisor_id', '22121800')
+        $query->shouldReceive('where')->with('supervisor_id', '22121822')
             ->once()->ordered()->andReturnSelf();
         // Stop before database access, after verifying both ownership filters.
-        $query->shouldReceive('where')->with('employee_id', '!=', '22121800')
+        $query->shouldReceive('where')->with('employee_id', '!=', '22121822')
             ->once()->ordered()->andThrow(new \RuntimeException('Scoped query verified'));
 
         $this->expectExceptionMessage('Scoped query verified');
@@ -163,7 +163,7 @@ class RequestFormSupervisorAccessTest extends TestCase
 
     public function test_request_form_middleware_accepts_new_supervisor(): void
     {
-        Auth::shouldReceive('user')->andReturn((object) ['id' => '22121800']);
+        Auth::shouldReceive('user')->andReturn((object) ['id' => '22121822']);
         $response = (new CheckRequestForm)->handle(
             Request::create('/'), fn () => new JsonResponse(['success' => true])
         );

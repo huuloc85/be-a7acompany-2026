@@ -101,8 +101,8 @@ class RequestForm extends Model
 
     public function requiresManagerApproval(): bool
     {
-        return in_array((string) $this->employee_id, ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800',
-            '22122900', '23080100', '23011400'], true);
+        return in_array((string) $this->employee_id, ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822',
+            '22122902', '23080130', '23011410'], true);
     }
 
     public function hasRequiredApprovalSignatures(): bool
@@ -122,8 +122,8 @@ class RequestForm extends Model
         if ($this->type === self::TYPE_GIAY_UY_QUYEN || ! $this->digital_signature_manager) {
             return false;
         }
-        $managerOnlyApplicants = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800',
-            '22122900', '23080100', '23011400'];
+        $managerOnlyApplicants = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822',
+            '22122902', '23080130', '23011410'];
 
         return in_array((string) $this->employee_id, $managerOnlyApplicants, true)
             || ! empty($this->digital_signature_supervisor);

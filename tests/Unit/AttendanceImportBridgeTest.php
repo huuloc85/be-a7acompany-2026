@@ -47,7 +47,7 @@ class AttendanceImportBridgeTest extends TestCase
             $table->dateTime('datetime');
             $table->timestamps();
         });
-        DB::table('employees')->insert(['id' => '24061901']);
+        DB::table('employees')->insert(['id' => '24061914']);
         Http::swap(new Factory);
         Http::preventStrayRequests();
         Carbon::setTestNow('2026-10-02 08:00:00');
@@ -106,7 +106,7 @@ class AttendanceImportBridgeTest extends TestCase
         self::assertSame(3, $result->skipped);
         self::assertSame(['unknown'], json_decode($result->unmatched_codes, true));
         $saved = (array) DB::table('attendance_records')->first();
-        self::assertSame('24061901', $saved['employee_code']);
+        self::assertSame('24061914', $saved['employee_code']);
         self::assertSame('2026-09-23 07:15:00', $saved['datetime']);
         Carbon::setTestNow('2026-10-02 09:00:00');
         $this->queue->enqueue('2026-09-23', '2026-09-23', 'admin');

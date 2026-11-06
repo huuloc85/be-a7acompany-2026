@@ -18,19 +18,23 @@ class EmployeeCodeLoggingTest extends TestCase
     {
         Carbon::setTestNow();
         Mockery::close();
+        \Illuminate\Container\Container::setInstance(null);
         parent::tearDown();
     }
 
     public static function loggingCases(): iterable
     {
-        yield 'view uses current ID' => ['logViewActivity', '25060400', '2026-09-28'];
-        yield 'special employee keeps current date' => ['logRoleSpecificLoginActivity', '25060400', '2026-09-28'];
-        yield 'ordinary shift keeps previous-day rule' => ['logRoleSpecificLoginActivity', '22120700', '2026-09-27'];
+        yield 'view uses current ID' => ['logViewActivity', '25060406', '2026-09-28'];
+        yield 'special employee keeps current date' => ['logRoleSpecificLoginActivity', '25060406', '2026-09-28'];
+        yield 'ordinary shift keeps previous-day rule' => ['logRoleSpecificLoginActivity', '22120703', '2026-09-27'];
     }
 
     #[DataProvider('loggingCases')]
     public function test_logs_use_current_employee_id(string $method, string $id, string $date): void
     {
+        $app = new \Illuminate\Container\Container;
+        \Illuminate\Container\Container::setInstance($app);
+        $app->instance('request', \Illuminate\Http\Request::create('/'));
         Carbon::setTestNow(Carbon::parse('2026-09-28 07:00:00'));
         $user = (object) ['id' => $id, 'name' => 'Test employee', 'role_id' => 15, 'calendar_category_id' => 1];
         $history = Mockery::mock('alias:App\\Models\\LoginHistory');

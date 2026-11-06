@@ -185,7 +185,7 @@ class EmpTodoController extends Controller
             $status = 0;
             $employeeCode = $user->id;
             $categoryCalender = $user->calendarCategory->id;
-            if ($employeeCode != '25060400') {
+            if ($employeeCode != '25060406') {
                 if ($categoryCalender != 2) {
                     $status = 1;
                 } else {

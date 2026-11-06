@@ -112,7 +112,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
+        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -217,7 +217,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
+        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -297,7 +297,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
+        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -417,7 +417,7 @@ class EmpRequestFormController extends Controller
         $currentUserId = Auth::id();
 
         // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060400', '22120700', '22120900', '22120300', '22122800', '22121800'];
+        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
 
         // Kiểm tra user hiện tại có phải supervisor không
         if (! in_array($currentUserId, $supervisorIds)) {
@@ -520,7 +520,7 @@ class EmpRequestFormController extends Controller
             $request->validate([
                 'supervisor_id' => (new RequestForm(['employee_id' => Auth::id()]))->requiresManagerApproval()
                     ? ['nullable']
-                    : ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()],
+                    : ['required', 'exists:employees,id', 'in:25060406,22120703,22120905,22120304,22122809,22121822', 'not_in:'.Auth::id()],
                 'digital_signature_applicant' => ['required'],
             ]);
         }
@@ -760,7 +760,7 @@ class EmpRequestFormController extends Controller
             }
             $request->validate(\App\Services\OvertimeApprovalService::rules());
             if ($request->has('supervisor_id') && ! $requestForm->requiresManagerApproval()) {
-                $request->validate(['supervisor_id' => ['required', 'exists:employees,id', 'in:25060400,22120700,22120900,22120300,22122800,22121800', 'not_in:'.Auth::id()]]);
+                $request->validate(['supervisor_id' => ['required', 'exists:employees,id', 'in:25060406,22120703,22120905,22120304,22122809,22121822', 'not_in:'.Auth::id()]]);
             }
         }
 
