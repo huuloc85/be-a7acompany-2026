@@ -24,12 +24,16 @@ class SendCap7AProductionReports extends Command
     {
         $lock = Cache::lock('cap7a:production-mail', 600);
         if (! $lock->get()) {
+            $this->info('Bỏ qua: lượt gửi trước đang chạy.');
+
             return self::SUCCESS;
         }
         $failed = false;
         try {
             $settings = (new Cap7AMailSettings)->current();
             if (! $settings['enabled']) {
+                $this->info('Gửi tự động đang tắt.');
+
                 return self::SUCCESS;
             }
             if (in_array(config('mail.mailers.'.config('mail.default').'.transport'), ['log', 'array', 'failover'], true)) {
@@ -49,19 +53,24 @@ class SendCap7AProductionReports extends Command
                 try {
                     $this->collect(new Cap7ASystem($id), $recipient, $settings['tracking_since_ms']);
                 } catch (Throwable $error) {
+                    $this->error($id.': không thu thập được báo cáo; xem log backend.');
                     report($error);
                     $failed = true;
                 }
             }
+            $sent = 0;
             foreach (DB::table('cap7a_production_reports')->whereNull('sent_at')->orderBy('id')->limit(100)->get() as $row) {
                 try {
                     Mail::bcc(Cap7AMailRecipients::parse($row->recipient))->send(new Cap7AProductionReport($row->system, json_decode($row->state, true, 512, JSON_THROW_ON_ERROR)));
                     DB::table('cap7a_production_reports')->where('id', $row->id)->update(['sent_at' => now(), 'updated_at' => now()]);
+                    $sent++;
                 } catch (Throwable $error) {
+                    $this->error('Báo cáo #'.$row->id.': gửi lỗi; xem log backend.');
                     report($error);
                     $failed = true;
                 }
             }
+            $this->info('Đã gửi '.$sent.' báo cáo.');
         } finally {
             $lock->release();
         }
@@ -73,7 +82,7 @@ class SendCap7AProductionReports extends Command
     {
         $client = new Cap7AThingsBoard($system);
         if (! $client->configured()) {
-            return;
+            throw new \RuntimeException($system->id.': chưa cấu hình nguồn dữ liệu CAP7A.');
         }
         $cursorKey = $system->cachePrefix().'production-mail-cursor';
         // First activation starts now, rather than mailing historical sessions.
@@ -84,9 +93,16 @@ class SendCap7AProductionReports extends Command
             Cache::forever($cursorKey, $checkpoint);
         }
         // Re-read one minute to include slightly delayed telemetry; DB key deduplicates.
+        // Recover the last closed session when older IoT versions did not keep history.
+        $latest = $client->status();
+        $latestResult = $this->queueState($system, $recipient, $latest['state'] ?? null, $checkpoint['since'], now()->getTimestampMs());
+        $this->info($system->id.': trạng thái mới nhất: '.$latestResult.'.');
+        $recordCount = 0;
+        $queued = 0;
         $start = max($checkpoint['since'], $checkpoint['cursor'] - 60000);
         for ($page = 0; $page < 10 && $start <= $end; $page++) {
             $records = $client->reportStateRecords($start, $end);
+            $recordCount += count($records);
             $last = $start - 1;
             foreach ($records as $record) {
                 $ts = $record['ts'] ?? null;
@@ -96,15 +112,9 @@ class SendCap7AProductionReports extends Command
                 $last = $ts;
                 $state = $record['value'] ?? null;
                 $state = is_string($state) ? json_decode($state, true) : $state;
-                if (! $this->eligible($state, $end) || $state['app_exited_at_ms'] < $checkpoint['since']) {
-                    continue;
+                if ($this->queueState($system, $recipient, $state, $checkpoint['since'], $end) === 'đã tạo báo cáo') {
+                    $queued++;
                 }
-                $key = hash('sha256', $system->cachePrefix().$state['session_id'].':'.$state['app_started_at_ms']);
-                DB::table('cap7a_production_reports')->insertOrIgnore([
-                    'report_key' => $key, 'system' => $system->id, 'recipient' => $recipient,
-                    'state' => json_encode($state, JSON_THROW_ON_ERROR),
-                    'created_at' => now(), 'updated_at' => now(),
-                ]);
             }
             Cache::forever($cursorKey, ['since' => $checkpoint['since'], 'cursor' => count($records) < 1000 ? $end : $last + 1]);
             if (count($records) < 1000) {
@@ -112,6 +122,25 @@ class SendCap7AProductionReports extends Command
             }
             $start = $last + 1;
         }
+        $this->info($system->id.': lịch sử '.$recordCount.' bản ghi, tạo mới '.$queued.' báo cáo.');
+    }
+
+    private function queueState(Cap7ASystem $system, string $recipient, mixed $state, int $since, int $now): string
+    {
+        if (! $this->eligible($state, $now)) {
+            return 'không có phiên kết thúc hợp lệ chạy đủ 10 phút';
+        }
+        if ($state['app_exited_at_ms'] < $since) {
+            return 'phiên kết thúc trước mốc bật gửi tự động';
+        }
+        $key = hash('sha256', $system->cachePrefix().$state['session_id'].':'.$state['app_started_at_ms']);
+        $inserted = DB::table('cap7a_production_reports')->insertOrIgnore([
+            'report_key' => $key, 'system' => $system->id, 'recipient' => $recipient,
+            'state' => json_encode($state, JSON_THROW_ON_ERROR),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return $inserted ? 'đã tạo báo cáo' : 'báo cáo đã tồn tại';
     }
 
     private function eligible(mixed $state, int $now): bool
