@@ -61,6 +61,8 @@ Route::middleware(['auth:sanctum', 'api.can:view_attendance'])->post('/updateDat
 // Attendance Records (Chấm Công)
 Route::middleware(['auth:sanctum', 'api.can:view_attendance'])->get('/acs-events/today', [AttendanceRecordController::class, 'fetchTodayEvents']);
 
+Route::get('/holiday-schedule', [\App\Http\Controllers\Api\Admin\HolidayScheduleController::class, 'show']);
+
 // Đăng nhập
 Route::post('/login', [AuthController::class, 'authLogin'])->name('auth.login');
 Route::post('/logout', [AuthController::class, 'authLogout'])->name('auth.logout');
@@ -72,6 +74,8 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         return;
     }
     Route::post('/auth/check', [AuthController::class, 'authCheck']);
+    Route::put('/holiday-schedule', [\App\Http\Controllers\Api\Admin\HolidayScheduleController::class, 'update'])
+        ->middleware('api.permission');
     Route::post('/employee-preview', [\App\Http\Controllers\Api\Admin\EmployeePreviewController::class, 'store'])->middleware('throttle:5,1');
     Route::post('/employee-preview/stop', [\App\Http\Controllers\Api\Admin\EmployeePreviewController::class, 'destroy']);
     Route::get('/onboarding/progress/{guide}', [\App\Http\Controllers\Api\OnboardingProgressController::class, 'show']);
