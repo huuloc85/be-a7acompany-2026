@@ -10,16 +10,16 @@ BEGIN
                 INSERT INTO schedule_details (employee_id, schedule_id, date, is_wc_trash, created_at, updated_at)
                 select employee_id,
                        celender_id,
-                       DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date) + 1) % 7 + ', i - 1, ' * 7)-1 DAY),
+                       DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date)) % 7 + ', i - 1, ' * 7) DAY),
                        if(day', i, ' IS NOT NULL AND day', i, ' != \'\', 1, 0),
                        NOW(),
                        NOW()
                 from celender_detail_wc wc_men
                          left join celenders c on wc_men.celender_id = c.id
                 where YEAR(c.date) =
-                      YEAR(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date) + 1) % 7 + ', i - 1, ' * 7)-1 DAY))
+                      YEAR(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date)) % 7 + ', i - 1, ' * 7) DAY))
                   AND MONTH(c.date) =
-                      MONTH(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date) + 1) % 7 + ', i - 1, ' * 7)-1 DAY))
+                      MONTH(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date)) % 7 + ', i - 1, ' * 7) DAY))
                 ON DUPLICATE KEY UPDATE is_wc_trash = VALUES(is_wc_trash),
                                         updated_at      = NOW();
             '

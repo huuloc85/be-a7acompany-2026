@@ -6,7 +6,7 @@ BEGIN
     SELECT 
         wc_men.employee_id,
         wc_men.celender_id,
-        DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date) + 1) % 7 + (weeks.week_num - 1) * 7) - 1 DAY) as date,
+        DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date)) % 7 + (weeks.week_num - 1) * 7) DAY) as date,
         CASE weeks.week_num
             WHEN 1 THEN IF(wc_men.day1 IS NOT NULL AND wc_men.day1 != '', 1, 0)
             WHEN 2 THEN IF(wc_men.day2 IS NOT NULL AND wc_men.day2 != '', 1, 0)
@@ -23,8 +23,8 @@ BEGIN
     ) weeks
     WHERE wc_men.employee_id = p_employee_id 
       AND wc_men.celender_id = p_celender_id
-      AND YEAR(c.date) = YEAR(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date) + 1) % 7 + (weeks.week_num - 1) * 7) - 1 DAY))
-      AND MONTH(c.date) = MONTH(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date) + 1) % 7 + (weeks.week_num - 1) * 7) - 1 DAY))
+      AND YEAR(c.date) = YEAR(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date)) % 7 + (weeks.week_num - 1) * 7) DAY))
+      AND MONTH(c.date) = MONTH(DATE_ADD(c.date, INTERVAL ((7 - DAYOFWEEK(c.date)) % 7 + (weeks.week_num - 1) * 7) DAY))
     ON DUPLICATE KEY
         UPDATE is_wc_trash = VALUES(is_wc_trash),
                updated_at = NOW();

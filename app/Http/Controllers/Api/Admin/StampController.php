@@ -250,8 +250,8 @@ class StampController extends BaseController
             throw \Illuminate\Validation\ValidationException::withMessages(['stamp_id' => 'Yêu cầu in tem đã được xử lý.']);
         }
 
-        // Kiểm tra nếu binStart có dấu phẩy thì tách thành nhiều records
-        if (strpos($originalStamp->binStart, ',') !== false) {
+        // Giữ nguyên một yêu cầu in lại thành một dòng lịch sử.
+        if ($originalStamp->purpose !== 'reprint' && strpos($originalStamp->binStart, ',') !== false) {
             return $this->splitStampIntoBins($originalStamp);
         }
 
@@ -273,13 +273,34 @@ class StampController extends BaseController
     }
 
     /**
-     * Create separate stamp records for each bin in binStart
+     * Keep reprints as one operation; create separate bins for other purposes.
      */
     private function createStampsFromBinList(array $validation)
     {
         \App\Models\Product::lockForUpdate()->findOrFail($validation['productId']);
         $binList = array_unique($this->getStampRange($validation['binStart'], $validation['binCount']));
         $createdStamps = collect();
+
+        if (($validation['purpose'] ?? null) === 'reprint') {
+            $bins = array_values($binList);
+            $binStart = $bins === range($bins[0], $bins[0] + count($bins) - 1)
+                ? (string) $bins[0]
+                : implode(',', $bins);
+
+            return collect([SendStamp::create([
+                'product_id' => $validation['productId'],
+                'type' => $validation['type'],
+                'date' => $validation['date'],
+                'shift' => $validation['shift'] ?? 1,
+                'binStart' => $binStart,
+                'binCount' => count($bins),
+                'status' => 'approve',
+                'purpose' => 'reprint',
+                'manager_id' => Auth()->user()->id,
+                'employee_id' => $validation['employee_id'] ?? Auth()->user()->id,
+                'manager_time' => Carbon::now()->format('H:i:s'),
+            ])]);
+        }
 
         foreach ($binList as $bin) {
             $bin = trim($bin);
@@ -299,10 +320,7 @@ class StampController extends BaseController
                 'manager_time' => Carbon::now()->format('H:i:s'),
                 'binCount' => 1, // Mỗi record chỉ có 1 bin
             ];
-            // In lại chủ động là một lần in mới, không gộp vào lịch sử trước đó.
-            $stamp = ($validation['purpose'] ?? null) === 'reprint'
-                ? SendStamp::create([...$key, ...$values])
-                : SendStamp::firstOrCreate($key, $values);
+            $stamp = SendStamp::firstOrCreate($key, $values);
 
             $createdStamps->push($stamp);
         }
