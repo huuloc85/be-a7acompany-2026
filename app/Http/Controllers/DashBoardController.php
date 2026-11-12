@@ -39,10 +39,10 @@ class DashBoardController extends Controller
         $totalSalary = SalaryManager::count();
         $totalCelender = Celender::count();
         $totalProduct = Product::count();
-        $totalHistory = LoginHistory::whereDate('date', Carbon::today())->count();
+        $totalHistory = LoginHistory::where('date', $today->toDateString())->count();
         $totalPlan = ProductionPlan::count();
         $totalRecord = AttendanceRecord::count();
-        $totalCheckEmployee = CheckEmployee::whereDate('date', Carbon::today())->count();
+        $totalCheckEmployee = CheckEmployee::where('date', $today->toDateString())->count();
         $salaryManagers = SalaryManager::orderBy('id', 'DESC')->limit(SalaryManager::paginate)->get();
         $celenders = Celender::orderBy('id', 'DESC')->limit(Celender::paginate)->get();
 

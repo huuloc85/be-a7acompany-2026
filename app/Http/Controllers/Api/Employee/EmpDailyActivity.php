@@ -6,7 +6,6 @@ use App\Helpers\HandleError;
 use App\Helpers\LogActivity;
 use App\Http\Controllers\Controller;
 use App\Models\CheckEmployee;
-use App\Models\DailyQuantity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +23,7 @@ class EmpDailyActivity extends Controller
 
             $employeeQuery = QueryBuilder::for(CheckEmployee::with('product'))
                 ->where('employee_id', $user->id)
-                ->whereDate('date', $filterDate)
+                ->where('date', $filterDate)
                 ->when(! empty($allowedStatuses), function ($query) use ($allowedStatuses) {
                     return $query->whereIn('status', $allowedStatuses);
                 })
@@ -37,20 +36,7 @@ class EmpDailyActivity extends Controller
             }
             $employees = $employeeQuery->paginate($limit);
 
-            collect($employees->items())->each(function ($checkEmployee) use ($allowedStatuses) {
-                $checkEmployee->date = Carbon::parse($checkEmployee->date);
-                $dailyQuantities = DailyQuantity::where('employee_id', $checkEmployee->employee_id)
-                    ->where('product_id', $checkEmployee->product_id)
-                    ->whereDate('date', $checkEmployee->date->format('Y-m-d'))
-                    ->whereIn('status', $allowedStatuses)
-                    ->get();
-
-                $dailyQuantities->each(function ($dailyQuantity) {
-                    $dailyQuantity->created_at_formatted = Carbon::parse($dailyQuantity->created_at)->format('H:i:s');
-                });
-
-                $checkEmployee->dailyQuantities = $dailyQuantities;
-            });
+            CheckEmployee::loadDailyQuantities($employees->getCollection(), $allowedStatuses);
 
             LogActivity::logViewActivity(auth()->user(), 'Xem Hoạt Động Hàng Ngày', 'Nhân viên xem danh sách hoạt động hàng ngày');
 

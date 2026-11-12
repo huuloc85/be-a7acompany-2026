@@ -54,7 +54,7 @@ return [
     'channels' => [
         'stack' => [
             'driver' => 'stack',
-            'channels' => ['single'],
+            'channels' => array_map('trim', explode(',', env('LOG_STACK', 'single'))),
             'ignore_exceptions' => false,
         ],
 
@@ -62,6 +62,7 @@ return [
             'driver' => 'single',
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
+            'locking' => true,
             'replace_placeholders' => true,
         ],
 
@@ -70,6 +71,7 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => 14,
+            'locking' => true,
             'replace_placeholders' => true,
         ],
 

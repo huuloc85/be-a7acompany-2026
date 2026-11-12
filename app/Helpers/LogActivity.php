@@ -4,6 +4,7 @@ namespace App\Helpers;
 
 use App\Models\LoginHistory;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 class LogActivity
 {
@@ -18,27 +19,8 @@ class LogActivity
         if (request()->attributes->get('employee_preview')) {
             return;
         }
-        $date = Carbon::now()->format('Y-m-d');
-        $currentMonthYear = Carbon::now()->format('Y-m');
-        $loginHistory = LoginHistory::where('employee_id', $user->id)
-            ->where('month_history', $currentMonthYear)
-            ->where('activity_type', $activityType)->where('date', $date)
-            ->first();
-
-        if ($loginHistory) {
-            self::touchExistingHistory($loginHistory);
-        } else {
-            LoginHistory::create([
-                'employee_id' => $user->id,
-                'activity_type' => $activityType,
-                'description' => $description,
-                'month_history' => $currentMonthYear,
-                'date' => $date,
-                'employee_code' => $user->id,
-                'employee_name' => $user->name,
-                'login_count' => 1,
-            ]);
-        }
+        $now = Carbon::now();
+        self::record($user, $activityType, $description, $now->toDateString(), $now->format('Y-m'));
     }
 
     public static function logRoleSpecificLoginActivity($user, $activityType, $description)
@@ -52,27 +34,28 @@ class LogActivity
         if (! in_array($user->role_id, $trackedRoles)) {
             return;
         }
-        $date = Carbon::now()->format('Y-m-d');
-        $currentMonthYear = Carbon::now()->format('Y-m');
-        // check xem nhân viên đó có làm ca hay không
-        if ($user->id != '25060406') {
-            if ($user->calendar_category_id != 2) {
-                $currentDateTime = Carbon::now();
-                $hour = $currentDateTime->hour;
-                // kiểm tra xem giờ hiện tại < 8h sáng -> giảm 1 ngày
-                if ($hour < 8) {
-                    $date = Carbon::now()->subDay()->format('Y-m-d');
-                }
-            }
+        $now = Carbon::now();
+        $date = $now->toDateString();
+        if ($user->id != '25060406' && $user->calendar_category_id != 2 && $now->hour < 8) {
+            $date = $now->copy()->subDay()->toDateString();
         }
-        $loginHistory = LoginHistory::where('employee_id', $user->id)
-            ->where('month_history', $currentMonthYear)
-            ->where('activity_type', $activityType)->where('date', $date)
-            ->first();
 
-        if ($loginHistory) {
+        self::record($user, $activityType, $description, $date, $now->format('Y-m'));
+    }
+
+    private static function record($user, $activityType, $description, string $date, string $currentMonthYear): void
+    {
+        $query = LoginHistory::where('employee_id', $user->id)
+            ->where('month_history', $currentMonthYear)
+            ->where('activity_type', $activityType)->where('date', $date);
+
+        if ($loginHistory = $query->first()) {
             self::touchExistingHistory($loginHistory);
-        } else {
+
+            return;
+        }
+
+        try {
             LoginHistory::create([
                 'employee_id' => $user->id,
                 'activity_type' => $activityType,
@@ -83,6 +66,13 @@ class LogActivity
                 'employee_name' => $user->name,
                 'login_count' => 1,
             ]);
+        } catch (UniqueConstraintViolationException $exception) {
+            $loginHistory = $query->lockForUpdate()->first();
+            if (! $loginHistory) {
+                throw $exception;
+            }
+
+            self::touchExistingHistory($loginHistory);
         }
     }
 }

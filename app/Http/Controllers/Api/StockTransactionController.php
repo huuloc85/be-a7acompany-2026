@@ -8,6 +8,8 @@ use App\Models\Employee;
 use App\Models\Product;
 use App\Models\StockTransaction;
 use App\Models\StorageProduct;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -51,12 +53,7 @@ class StockTransactionController extends Controller
             if ($request->filled('employee_id')) {
                 $query->where('st.employee_id', $request->employee_id);
             }
-            if ($request->filled('from_date')) {
-                $query->whereDate('st.created_at', '>=', $request->from_date);
-            }
-            if ($request->filled('to_date')) {
-                $query->whereDate('st.created_at', '<=', $request->to_date);
-            }
+            $this->filterTransactionDates($query, $request, 'st.created_at');
 
             $transactions = $query->orderBy('st.created_at', 'desc')
                 ->paginate($request->input('per_page', 15));
@@ -187,20 +184,13 @@ class StockTransactionController extends Controller
         try {
             $query = StockTransaction::query();
 
-            if ($request->filled('from_date')) {
-                $query->whereDate('created_at', '>=', $request->from_date);
-            }
-            if ($request->filled('to_date')) {
-                $query->whereDate('created_at', '<=', $request->to_date);
-            }
+            $this->filterTransactionDates($query, $request, 'created_at');
 
             $totalIn = (clone $query)->where('type', 'in')->sum('quantity');
             $totalOut = (clone $query)->where('type', 'out')->sum('quantity');
 
-            $topProducts = StockTransaction::with('storageProduct.product')
+            $topProducts = (clone $query)->with('storageProduct.product')
                 ->select('storage_product_id', DB::raw('SUM(quantity) as total_quantity'), DB::raw('COUNT(*) as transaction_count'))
-                ->when($request->filled('from_date'), fn ($q) => $q->whereDate('created_at', '>=', $request->from_date))
-                ->when($request->filled('to_date'), fn ($q) => $q->whereDate('created_at', '<=', $request->to_date))
                 ->groupBy('storage_product_id')
                 ->orderBy('total_quantity', 'desc')
                 ->limit($request->input('limit', 50))
@@ -617,6 +607,28 @@ class StockTransactionController extends Controller
     /**
      * Parse barcode: 39a101020251001 → [product_id, separator, date, shift, bin_number]
      */
+    private function filterTransactionDates(EloquentBuilder|QueryBuilder $query, Request $request, string $column): void
+    {
+        foreach (['from_date' => '>=', 'to_date' => '<='] as $filter => $operator) {
+            if (! $request->filled($filter)) {
+                continue;
+            }
+
+            $value = $request->input($filter);
+            $date = is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value)
+                ? date_create_immutable_from_format('!Y-m-d', $value)
+                : false;
+
+            if (! $date || $date->format('Y-m-d') !== $value) {
+                $query->whereDate($column, $operator, $value);
+            } elseif ($filter === 'to_date') {
+                $query->where($column, '<', $date->modify('+1 day')->format('Y-m-d'));
+            } else {
+                $query->where($column, '>=', $value);
+            }
+        }
+    }
+
     private function parseBarcode($barcode)
     {
         $clean = preg_replace('/[^a-zA-Z0-9]/', '', $barcode);
