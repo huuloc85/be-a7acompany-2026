@@ -35,11 +35,11 @@ class EmpRequestFormController extends Controller
 
         // Lọc theo ngày tạo
         if ($request->has('from_date')) {
-            $query->whereDate('submitted_at', '>=', $request->from_date);
+            $query->whereDate('created_at', '>=', $request->from_date);
         }
 
         if ($request->has('to_date')) {
-            $query->whereDate('submitted_at', '<=', $request->to_date);
+            $query->whereDate('created_at', '<=', $request->to_date);
         }
 
         // ✅ Select TẤT CẢ columns cần thiết cho response (theo yêu cầu FE)
@@ -92,7 +92,7 @@ class EmpRequestFormController extends Controller
             'managerApprovedBy:id,name,email,phone',
         ]);
 
-        $requestForms = $query->orderBy('submitted_at', 'desc')
+        $requestForms = $query->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 15));
 
         return response()->json([

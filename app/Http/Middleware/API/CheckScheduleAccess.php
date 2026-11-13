@@ -25,8 +25,10 @@ class CheckScheduleAccess
             in_array((string) $user->role_id, ['14', '18', '19', '23', '24', '25'], true)
         );
 
-        if ($isLeader) {
-            // Tổ trưởng, tổ phó chỉ được đọc; vẫn giữ quyền chặn riêng của tài khoản.
+        $isIndividualViewer = (string) ($user?->id ?? '') === '23080130';
+
+        if ($isLeader || ($isIndividualViewer && $request->isMethodSafe())) {
+            // Quyền xem bổ sung vẫn giữ quyền chặn riêng của tài khoản.
             if ($request->isMethodSafe() && ! $user->deniedPermissions()->where('key', $permission)->exists()) {
                 return $next($request);
             }
