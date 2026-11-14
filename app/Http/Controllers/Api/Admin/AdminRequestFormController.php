@@ -72,11 +72,11 @@ class AdminRequestFormController extends Controller
         }
 
         if ($request->has('from_date')) {
-            $query->whereDate('submitted_at', '>=', $request->from_date);
+            $query->whereDate('created_at', '>=', $request->from_date);
         }
 
         if ($request->has('to_date')) {
-            $query->whereDate('submitted_at', '<=', $request->to_date);
+            $query->whereDate('created_at', '<=', $request->to_date);
         }
 
         $requestForms = $query->orderBy('submitted_at', 'desc')
