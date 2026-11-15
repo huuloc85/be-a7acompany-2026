@@ -7,6 +7,7 @@ use App\Models\CheckEmployee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class DailyScheduleController extends BaseController
@@ -22,7 +23,12 @@ class DailyScheduleController extends BaseController
                 ->when(! empty($allowedStatuses), function ($query) use ($allowedStatuses) {
                     return $query->whereIn('status', $allowedStatuses);
                 })
-                ->allowedFilters(['employee_id', 'date'])
+                ->allowedFilters([
+                    'employee_id',
+                    'date',
+                    AllowedFilter::exact('status'),
+                    AllowedFilter::partial('product.name'),
+                ])
                 ->allowedSorts(['employee_id', 'date']);
 
             $limit = $request->input('limit', 10);
