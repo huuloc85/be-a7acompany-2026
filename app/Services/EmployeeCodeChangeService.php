@@ -15,9 +15,22 @@ class EmployeeCodeChangeService
             $old = (string) $employee->getKey();
             $new = (string) ($attributes['id'] ?? $old);
             if ($new === $old) {
+                if ((isset($attributes['name']) && $attributes['name'] !== $employee->name)
+                    || (isset($attributes['role_id']) && (int) $attributes['role_id'] !== (int) $employee->role_id)) {
+                    app(EmployeeCodeTransferService::class)->assertIdle([$old]);
+                }
                 $employee->update($attributes);
 
                 return;
+            }
+
+            if (! Schema::hasTable('employee_code_transfers')) {
+                throw ValidationException::withMessages(['id' => 'Chưa cài đặt hàng đợi chuyển mã. Vui lòng cập nhật BE và bridge trước khi đổi mã.']);
+            }
+            app(EmployeeCodeTransferService::class)->assertIdle([$old, $new]);
+            app(EmployeeCodeTransferService::class)->assertUnused($new);
+            if (isset($attributes['name']) && $attributes['name'] !== $employee->name) {
+                throw ValidationException::withMessages(['name' => 'Giữ nguyên tên khi chuyển mã để đối chiếu hồ sơ máy chấm công. Đổi tên sau khi chuyển xong.']);
             }
 
             if (DB::table('employees')->where('id', $new)->exists()) {
@@ -54,6 +67,7 @@ class EmployeeCodeChangeService
             }
 
             $employee->update($attributes);
+            app(EmployeeCodeTransferService::class)->record($old, $employee);
             foreach ($references as $table => $columns) {
                 foreach ($columns as $column) {
                     if (Schema::hasColumn($table, $column)) {

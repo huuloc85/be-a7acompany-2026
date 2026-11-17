@@ -4,14 +4,25 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Helpers\HandleError;
 use App\Models\SendStamp;
+use App\Services\ManualStampProduct;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Spatie\QueryBuilder\AllowedFilter;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class StampController extends BaseController
 {
+    public function prepareManualProduct(Request $request)
+    {
+        try {
+            return response()->json(ManualStampProduct::fromRequest($request));
+        } catch (\Throwable $e) {
+            return HandleError::handle($e);
+        }
+    }
+
     public function savePrint(Request $request)
     {
         try {
@@ -19,7 +30,8 @@ class StampController extends BaseController
             Log::info('Request to save print received', ['request' => $request->all()]);
 
             $validation = $request->validate([
-                'productId' => 'required|exists:products,id',
+                'productId' => 'required_without_all:manual_product,reprint_stamp_id|nullable|exists:products,id',
+                'reprint_stamp_id' => 'sometimes|exists:send_stamps,id',
                 'type' => 'required|string|in:box,bag,Tem Thùng,Tem Bịch',
                 'date' => 'required|date_format:Y-m-d',
                 'shift' => 'required|in:1,2',
@@ -30,7 +42,34 @@ class StampController extends BaseController
                 'purpose' => 'nullable|in:new,additional,reprint',
             ]);
 
+            if ($request->filled('reprint_stamp_id')) {
+                ManualStampProduct::authorize();
+                if ($request->filled('stamp_id') || $request->filled('productId')) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['reprint_stamp_id' => 'Không kết hợp in lại với yêu cầu in khác.']);
+                }
+                $source = SendStamp::findOrFail($validation['reprint_stamp_id']);
+                if (! $source->manual_product || $source->status !== 'approve') {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['reprint_stamp_id' => 'Chỉ in lại tem ngoài danh mục đã in.']);
+                }
+                $validation = array_merge($validation, $source->only(['type', 'date', 'shift', 'binStart', 'binCount']), [
+                    'productId' => null,
+                    'manual_product' => $source->manual_product,
+                    'purpose' => 'reprint',
+                ]);
+            } elseif ($request->has('manual_product')) {
+                $validation['manual_product'] = ManualStampProduct::fromRequest($request);
+                if ($request->filled('productId') || $request->filled('stamp_id')) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['manual_product' => 'Không kết hợp sản phẩm nhập tay với sản phẩm trong danh mục.']);
+                }
+                $validation['productId'] = null;
+            }
+
             if ($request['stamp_id']) {
+                if (SendStamp::findOrFail($validation['stamp_id'])->manual_product) {
+                    ManualStampProduct::authorize();
+                    throw \Illuminate\Validation\ValidationException::withMessages(['stamp_id' => 'Vui lòng dùng chức năng in lại tem ngoài danh mục.']);
+                }
+
                 return $this->approveExistingStamp($validation['stamp_id']);
             }
 
@@ -78,7 +117,14 @@ class StampController extends BaseController
                     'binStart',
                     'type',
                     'purpose',
-                    'product.name',
+                    AllowedFilter::callback('product.name', function ($query, $value) {
+                        $query->where(function ($query) use ($value) {
+                            foreach ((array) $value as $name) {
+                                $query->orWhereHas('product', fn ($product) => $product->where('name', 'like', '%'.$name.'%'))
+                                    ->orWhere('manual_product->name', 'like', '%'.$name.'%');
+                            }
+                        });
+                    }),
                     'employee.name',
                     'created_at',
                 ])
@@ -145,7 +191,7 @@ class StampController extends BaseController
         try {
             // Validate request
             $validated = $request->validate([
-                'product_id' => 'required|string',
+                'product_id' => 'required_without:manual_product|nullable|string',
                 'date' => 'required|date_format:Y-m-d',
                 'shift' => 'required|in:1,2',
                 'binStart' => 'required|string|regex:/^[0-9]+(,[0-9]+)*$/',
@@ -155,8 +201,16 @@ class StampController extends BaseController
 
             Log::info('Check duplicate request', ['request' => $validated]);
 
+            $query = SendStamp::query();
+            if ($request->has('manual_product')) {
+                $manual = ManualStampProduct::fromRequest($request);
+                $query->whereNull('product_id')->where('manual_product_key', $manual['key']);
+            } else {
+                $query->where('product_id', $validated['product_id']);
+            }
+
             // Query existing approved stamps with purpose = 'new'
-            $existingStamps = SendStamp::where('product_id', $validated['product_id'])
+            $existingStamps = $query
                 ->where('date', $validated['date'])
                 ->where('shift', $validated['shift'])
                 ->where('type', $validated['type'])
@@ -195,6 +249,8 @@ class StampController extends BaseController
                 'duplicates' => $duplicates,
                 'message' => $isDuplicate ? 'Phát hiện tem trùng lặp' : 'Không có tem trùng lặp',
             ], 200);
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return HandleError::handle($e);
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
 
@@ -277,7 +333,11 @@ class StampController extends BaseController
      */
     private function createStampsFromBinList(array $validation)
     {
-        \App\Models\Product::lockForUpdate()->findOrFail($validation['productId']);
+        $manual = $validation['manual_product'] ?? null;
+        if (! $manual) {
+            \App\Models\Product::lockForUpdate()->findOrFail($validation['productId']);
+        }
+        $manualFields = $manual ? ['manual_product' => $manual, 'manual_product_key' => $manual['key']] : [];
         $binList = array_unique($this->getStampRange($validation['binStart'], $validation['binCount']));
         $createdStamps = collect();
 
@@ -288,6 +348,7 @@ class StampController extends BaseController
                 : implode(',', $bins);
 
             return collect([SendStamp::create([
+                ...$manualFields,
                 'product_id' => $validation['productId'],
                 'type' => $validation['type'],
                 'date' => $validation['date'],
@@ -320,7 +381,9 @@ class StampController extends BaseController
                 'manager_time' => Carbon::now()->format('H:i:s'),
                 'binCount' => 1, // Mỗi record chỉ có 1 bin
             ];
-            $stamp = SendStamp::firstOrCreate($key, $values);
+            $stamp = $manual
+                ? SendStamp::create(array_merge($key, $values, $manualFields))
+                : SendStamp::firstOrCreate($key, $values);
 
             $createdStamps->push($stamp);
         }

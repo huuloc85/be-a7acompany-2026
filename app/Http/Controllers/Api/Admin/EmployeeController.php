@@ -201,6 +201,8 @@ class EmployeeController extends BaseController
 
             \App\Services\EmployeePrivilegeGuard::check($validated['role_id']);
 
+            app(\App\Services\EmployeeCodeTransferService::class)->assertUnused($validated['id']);
+
             // Process avatar
             // if ($request->hasFile('photo')) {
             //     $file = $request->file('photo');

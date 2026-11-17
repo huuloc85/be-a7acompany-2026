@@ -29,7 +29,7 @@ class AttendanceDeviceBridge extends Command
         }
         $limit = $this->option('once') ? 1 : 5;
         for ($i = 0; $i < $limit; $i++) {
-            if (! $this->processEmployeeRequest($queue, $device)) {
+            if (! $this->processDeviceRequest($queue, $device)) {
                 break;
             }
         }
@@ -52,7 +52,7 @@ class AttendanceDeviceBridge extends Command
                                 return;
                             }
                             // One profile at a time, outside the attendance transaction and HTTP call.
-                            $this->processEmployeeRequest($queue, $device);
+                            $this->processDeviceRequest($queue, $device);
                             $lastProfileCheck = microtime(true);
                         }
                     );
@@ -72,6 +72,17 @@ class AttendanceDeviceBridge extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function processDeviceRequest(AttendanceDeviceRequestService $queue, AttendanceDeviceEmployeeService $device): bool
+    {
+        if (app(\App\Services\EmployeeCodeTransferService::class)->processNext()) {
+            $this->info('Đã xử lý một yêu cầu chuyển mã. Kiểm tra trạng thái bằng attendance:code-transfer status.');
+
+            return true;
+        }
+
+        return $this->processEmployeeRequest($queue, $device);
     }
 
     private function processEmployeeRequest(AttendanceDeviceRequestService $queue, AttendanceDeviceEmployeeService $device): bool

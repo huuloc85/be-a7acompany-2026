@@ -84,7 +84,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
     Route::get('/birthday', [AuthController::class, 'getBirthdayEmployees']);
 
     // Login, Dashboard, Change Profile (Quản Lý Đăng Nhập và Trang Chủ)
-    Route::middleware(['api.can:view_total_employees'])->prefix('admin')->group(function () {
+    Route::prefix('admin')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index']);
     });
 
@@ -113,7 +113,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
     });
 
     // Request Forms Management (Quản Lý Đơn Yêu Cầu)
-    Route::middleware(['api.can:view_employee_management'])->prefix('request-forms')->group(function () {
+    Route::middleware(['api.can:view_request_forms,view_employee_management'])->prefix('request-forms')->group(function () {
         Route::get('/', [AdminRequestFormController::class, 'index']);  // Xem tất cả đơn
         Route::get('/statistics', [AdminRequestFormController::class, 'getStatistics']); // Thống kê
         Route::get('/{id}', [AdminRequestFormController::class, 'show']); // Xem chi tiết đơn
@@ -144,7 +144,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
     });
 
     // Roles (Quản Lý Chức Vụ)
-    Route::middleware(['api.can:view_total_positions'])->prefix('roles')->group(function () {
+    Route::middleware(['api.can:view_total_positions,view_employee_management'])->prefix('roles')->group(function () {
         Route::get('/', [RoleController::class, 'getRoles']);
         Route::get('/{id}', [RoleController::class, 'getRole']);
         Route::post('/', [RoleController::class, 'addRole']);
@@ -183,7 +183,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::delete('/{id}', [SalaryController::class, 'deleteSalary']);
     });
 
-    Route::middleware([\App\Http\Middleware\API\CheckScheduleAccess::class.':view_schedule_categories'])->prefix('schedule-categories')->group(function () {
+    Route::middleware([\App\Http\Middleware\API\CheckScheduleAccess::class])->prefix('schedule-categories')->group(function () {
         Route::get('/', [ScheduleCategoryController::class, 'index']);   // Lấy danh sách danh mục
         Route::post('/', [ScheduleCategoryController::class, 'store']);  // Thêm mới danh mục
         Route::get('/{id}', [ScheduleCategoryController::class, 'show']);  // Lấy chi tiết danh mục
@@ -222,12 +222,12 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::middleware(['api.can:view_products'])->put('/addQuantityDetail', [ProductController::class, 'addQuantityDetailProduct']);
     });
 
-    Route::middleware(['api.can:view_products'])->prefix('quantities')->group(function () {
-        Route::post('/addList', [TotalQuantityController::class, 'addProductsQuantity']);
+    Route::prefix('quantities')->group(function () {
+        Route::post('/addList', [TotalQuantityController::class, 'addProductsQuantity'])->middleware('api.can:view_products');
         Route::prefix('monthly')->group(function () {
-            Route::patch('/updateList', [TotalQuantityController::class, 'updateMonthQuantities']);
-            Route::get('/', [TotalQuantityController::class, 'getMonthly']);
-            Route::patch('/{id}', [TotalQuantityController::class, 'updateMonthQuantity']);
+            Route::patch('/updateList', [TotalQuantityController::class, 'updateMonthQuantities'])->middleware('api.can:view_products');
+            Route::get('/', [TotalQuantityController::class, 'getMonthly'])->middleware('api.can:view_products,view_chart_product');
+            Route::patch('/{id}', [TotalQuantityController::class, 'updateMonthQuantity'])->middleware('api.can:view_products');
         });
         // TODO: Implement more if needed
         // Route::post('/', [TotalQuantityController::class, 'store']);
@@ -236,6 +236,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
     });
 
     Route::middleware(['api.can:view_label_management'])->prefix('stamps')->group(function () {
+        Route::post('/manual-product', [StampController::class, 'prepareManualProduct']);
         Route::post('/check-duplicate', [StampController::class, 'checkDuplicate']);
         Route::put('/savePrint', [StampController::class, 'savePrint']);
         Route::get('/history', [StampController::class, 'getStampHistory']);
@@ -243,12 +244,12 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::post('/reject/{id}', [StampController::class, 'rejectPrint']);
     });
 
-    Route::middleware(['api.can:view_schedule'])->prefix('daily-schedules')->group(function () {
-        Route::get('/', [DailyScheduleController::class, 'index']);
+    Route::prefix('daily-schedules')->group(function () {
+        Route::get('/', [DailyScheduleController::class, 'index'])->middleware('api.can:manage_daily_activity');
         // Route::post('/', [DailyScheduleController::class, 'store']);
-        Route::get('/{id}', [DailyScheduleController::class, 'show']);
-        Route::patch('/{id}', [DailyScheduleController::class, 'update']);
-        Route::delete('/{id}', [DailyScheduleController::class, 'destroy']);
+        Route::get('/{id}', [DailyScheduleController::class, 'show'])->middleware('api.can:manage_daily_activity');
+        Route::patch('/{id}', [DailyScheduleController::class, 'update'])->middleware('api.can:manage_daily_activity');
+        Route::delete('/{id}', [DailyScheduleController::class, 'destroy'])->middleware('api.can:manage_daily_activity');
     });
 
     Route::middleware(['api.can:view_history'])->prefix('history')->group(function () {
@@ -384,7 +385,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
     });
 
     // Feedbacks - Admin nhận và phản hồi góp ý
-    Route::middleware(['api.can:view_employee_management'])->prefix('feedbacks')->group(function () {
+    Route::middleware(['api.can:feed_back,view_feedbacks'])->prefix('feedbacks')->group(function () {
         Route::get('/', [FeedbackController::class, 'index']);            // Xem tất cả góp ý
         Route::get('/{id}', [FeedbackController::class, 'show']);         // Xem chi tiết
         Route::post('/{id}/reply', [FeedbackController::class, 'reply']); // Phản hồi

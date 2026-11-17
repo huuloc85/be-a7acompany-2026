@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\Product;
 use App\Models\StockTransaction;
 use App\Models\StorageProduct;
+use App\Services\ManualStampBarcodeResolver;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
@@ -288,12 +289,14 @@ class StockTransactionController extends Controller
         try {
             $request->validate(['barcode' => 'required|string']);
 
+            DB::beginTransaction();
             $barcodeData = $this->parseBarcode($request->barcode);
             if (! $barcodeData) {
+                DB::rollBack();
+
                 return response()->json(['error' => ['code' => 422, 'message' => 'Format barcode không đúng']], 422);
             }
 
-            DB::beginTransaction();
             $product = Product::lockForUpdate()->findOrFail($barcodeData['product_id']);
             $lotCode = $this->generateLotCode($barcodeData['date'], $barcodeData['shift'], $barcodeData['separator']);
 
@@ -317,8 +320,12 @@ class StockTransactionController extends Controller
                 'storage_product' => $storageProduct,
                 'barcode_info' => $barcodeData,
                 'lot_code' => $lotCode,
-                'quantity_per_bin' => $product->quanEntityBin ?? 0,
+                'quantity_per_bin' => $barcodeData['quantity_per_bin'] ?? $product->quanEntityBin ?? 0,
             ]);
+        } catch (\DomainException $exception) {
+            DB::rollBack();
+
+            return response()->json(['error' => ['code' => 422, 'message' => $exception->getMessage()]], 422);
         } catch (\Throwable $th) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -336,8 +343,11 @@ class StockTransactionController extends Controller
         try {
             $request->validate(['barcode' => 'required|string', 'quantity' => 'sometimes|required|integer|min:1']);
 
+            DB::beginTransaction();
             $barcodeData = $this->parseBarcode($request->barcode);
             if (! $barcodeData) {
+                DB::rollBack();
+
                 return response()->json([
                     'error' => ['code' => 422, 'message' => 'Format barcode không đúng'],
                 ], 422);
@@ -345,7 +355,6 @@ class StockTransactionController extends Controller
 
             $lotCode = $this->generateLotCode($barcodeData['date'], $barcodeData['shift'], $barcodeData['separator']);
 
-            DB::beginTransaction();
             $product = Product::lockForUpdate()->findOrFail($barcodeData['product_id']);
 
             // Check trùng
@@ -363,7 +372,7 @@ class StockTransactionController extends Controller
                 ], 409);
             }
 
-            $quantity = $request->input('quantity', $product->quanEntityBin ?? 0);
+            $quantity = $request->input('quantity', $barcodeData['quantity_per_bin'] ?? $product->quanEntityBin ?? 0);
             if ($quantity < 1) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['quantity' => 'Số lượng nhập phải lớn hơn 0.']);
             }
@@ -413,6 +422,10 @@ class StockTransactionController extends Controller
                     'name' => $employee->name,
                 ] : null,
             ], 201);
+        } catch (\DomainException $exception) {
+            DB::rollBack();
+
+            return response()->json(['error' => ['code' => 422, 'message' => $exception->getMessage()]], 422);
         } catch (\Throwable $th) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -428,10 +441,17 @@ class StockTransactionController extends Controller
     public function scanOut(Request $request): JsonResponse
     {
         try {
-            $request->validate(['barcode' => 'required|string', 'quantity' => 'sometimes|required|integer|min:1']);
+            $request->validate([
+                'barcode' => 'required|string',
+                'quantity' => 'sometimes|required|integer|min:1',
+                'expected_product_id' => 'sometimes|required|integer|min:1',
+            ]);
 
+            DB::beginTransaction();
             $barcodeData = $this->parseBarcode($request->barcode);
             if (! $barcodeData) {
+                DB::rollBack();
+
                 return response()->json([
                     'error' => ['code' => 422, 'message' => 'Format barcode không đúng'],
                 ], 422);
@@ -440,7 +460,9 @@ class StockTransactionController extends Controller
             $lotCode = $this->generateLotCode($barcodeData['date'], $barcodeData['shift'], $barcodeData['separator']);
             $employee = auth()->user();
 
-            DB::beginTransaction();
+            if ($request->has('expected_product_id') && (int) $request->expected_product_id !== $barcodeData['product_id']) {
+                throw new \DomainException('Sản phẩm trên barcode không khớp với QR đã quét. Vui lòng kiểm tra lại.');
+            }
 
             $storageProduct = StorageProduct::where('product_id', $barcodeData['product_id'])
                 ->select('id', 'product_id', 'lot', 'bin', 'quantity', 'barcode')
@@ -494,6 +516,10 @@ class StockTransactionController extends Controller
                     'name' => $employee->name,
                 ] : null,
             ], 201);
+        } catch (\DomainException $exception) {
+            DB::rollBack();
+
+            return response()->json(['error' => ['code' => 422, 'message' => $exception->getMessage()]], 422);
         } catch (\Throwable $th) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -632,6 +658,16 @@ class StockTransactionController extends Controller
     private function parseBarcode($barcode)
     {
         $clean = preg_replace('/[^a-zA-Z0-9]/', '', $barcode);
+        if (preg_match('/^(M[0-9A-F]{20})a(\d{8})([12])(\d{3,})$/D', $clean, $manual)) {
+            $resolved = app(ManualStampBarcodeResolver::class)->resolve($manual[1], $manual[2], (int) $manual[3], (int) $manual[4]);
+
+            return $resolved + [
+                'separator' => 'a',
+                'date' => $manual[2],
+                'shift' => (int) $manual[3],
+                'bin_number' => (int) $manual[4],
+            ];
+        }
         preg_match('/^(\d+)([a-zA-Z])(\d{8})(\d{1})(\d{3})$/', $clean, $m);
 
         if (count($m) !== 6) {

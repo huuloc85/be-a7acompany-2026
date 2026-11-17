@@ -1,5 +1,7 @@
 # 🔐 RBAC Permission — Tài liệu Frontend
 
+> Tài liệu lịch sử tháng 03/2026. Không dùng hướng dẫn “cùng module là có quyền” bên dưới để kiểm soát truy cập. Xem [kiểm tra RBAC ngày 17/11/2026](RBAC-AUDIT-2026-11-17.md) cho logic và các điểm chưa thống nhất hiện tại.
+
 > **Ngày cập nhật:** 31/03/2026  
 > **Backend version:** v2.1
 

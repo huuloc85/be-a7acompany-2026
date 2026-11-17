@@ -49,10 +49,8 @@ class AttendanceDeviceImportTest extends TestCase
                 ['employeeNoString' => '26092300', 'time' => '2026-09-23T07:00:00+07:00'],
             ],
         ]])]);
-        $employees = Mockery::mock('alias:App\\Models\\Employee');
-        $employees->shouldReceive('withTrashed')->once()->andReturnSelf();
-        $employees->shouldReceive('pluck')->with('id')->once()->andReturn(collect(['24061914', '24101934']));
         $records = Mockery::mock('overload:App\\Services\\AttendanceEventWriter');
+        $records->shouldReceive('store')->once()->with('26092300', Mockery::any())->andReturn(null);
         $records->shouldReceive('store')->once()->with('24061914', Mockery::on(fn ($time) => $time->toIso8601String() === '2026-09-23T07:15:00+07:00'
         ))->andReturn(true);
         $records->shouldReceive('store')->once()->with('24101934', Mockery::on(fn ($time) => $time->toIso8601String() === '2026-09-23T17:30:00+07:00'

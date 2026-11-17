@@ -90,19 +90,18 @@ class Employee extends Authenticatable
     }
 
     /**
-     * Tính quyền hiệu lực = (role - denied) ∪ granted
+     * Tính quyền hiệu lực = (role ∪ granted) − denied. Chặn theo key,
+     * kể cả dữ liệu cũ có nhiều permission ID dùng chung một key.
      */
     public function getEffectivePermissions()
     {
         $rolePermissions = $this->role?->permissions ?? collect();
-        $deniedIds = $this->deniedPermissions->pluck('id')->toArray();
+        $deniedKeys = $this->deniedPermissions->pluck('key')->toArray();
         $grantedPermissions = $this->grantedPermissions;
 
-        // Bỏ quyền bị deny khỏi role
-        $filtered = $rolePermissions->filter(fn ($p) => ! in_array($p->id, $deniedIds));
-
-        // Merge thêm quyền granted
-        return $filtered->merge($grantedPermissions)->unique('id');
+        return $rolePermissions->merge($grantedPermissions)
+            ->reject(fn ($permission) => in_array($permission->key, $deniedKeys, true))
+            ->unique('id')->values();
     }
 
     /**

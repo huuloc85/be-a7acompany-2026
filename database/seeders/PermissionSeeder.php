@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Support\RbacPermissionCatalog;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -97,7 +98,26 @@ class PermissionSeeder extends Seeder
             return $item;
         }, $permissions_sidebar);
 
-        // Insert cả 2 nhóm
-        DB::table('permissions')->insert(array_merge($permissions_home, $permissions_sidebar));
+        // Một key là một quyền; vị trí hiển thị không tạo quyền mới.
+        $permissions = [];
+        foreach (array_merge($permissions_home, $permissions_sidebar) as $permission) {
+            $key = RbacPermissionCatalog::ALIASES[$permission['key']] ?? $permission['key'];
+            $permission['key'] = $key;
+            if (isset($permissions[$key])) {
+                $permissions[$key]['display_area'] = 'both';
+                if ($permissions[$key]['type'] !== $permission['type']) {
+                    $permissions[$key]['type'] = 'both';
+                }
+            } else {
+                $permissions[$key] = $permission;
+            }
+        }
+
+        // Không ghi đè cấu hình hoặc thay ID của quyền đã được phân cho vai trò.
+        foreach ($permissions as $key => $permission) {
+            if (! DB::table('permissions')->where('key', $key)->exists()) {
+                DB::table('permissions')->insert($permission);
+            }
+        }
     }
 }

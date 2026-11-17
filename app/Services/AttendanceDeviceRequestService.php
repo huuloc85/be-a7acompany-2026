@@ -14,6 +14,13 @@ class AttendanceDeviceRequestService
         }
 
         return DB::transaction(function () use ($employeeId, $requestedBy, $action, $employeeName) {
+            if (\Illuminate\Support\Facades\Schema::hasTable('employees')) {
+                DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first();
+            }
+            app(EmployeeCodeTransferService::class)->assertIdle([$employeeId]);
+            if (app(EmployeeCodeTransferService::class)->resolve($employeeId) !== $employeeId) {
+                throw new \Symfony\Component\HttpKernel\Exception\ConflictHttpException('Đây là mã cũ. Sử dụng hồ sơ mã mới để đồng bộ máy chấm công.');
+            }
             $pending = $action === 'delete' ? 'delete_pending' : 'pending';
             DB::table('attendance_device_requests')->insertOrIgnore([
                 'employee_id' => $employeeId, 'requested_by' => $requestedBy,

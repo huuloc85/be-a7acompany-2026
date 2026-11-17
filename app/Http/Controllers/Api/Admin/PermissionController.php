@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class PermissionController extends BaseController
 {
@@ -71,7 +72,8 @@ class PermissionController extends BaseController
                 'permission' => $permission,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'Permission không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('Permission show error', [
@@ -91,7 +93,7 @@ class PermissionController extends BaseController
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'key' => 'required|string|max:255',
+            'key' => 'required|string|max:255|unique:permissions,key',
             'name' => 'required|string|max:255',
             'type' => 'required|in:admin,employee,both',
             'module' => 'nullable|string|max:100',
@@ -118,8 +120,8 @@ class PermissionController extends BaseController
             ]);
 
             // Check for unique constraint violation
-            if (str_contains($e->getMessage(), 'permissions_key_display_area_unique')) {
-                return response()->json(['message' => 'Permission key và display_area đã tồn tại.'], 422);
+            if (str_contains($e->getMessage(), 'permissions_key_unique') || str_contains($e->getMessage(), 'permissions_key_display_area_unique')) {
+                return response()->json(['message' => 'Mã quyền đã tồn tại.'], 422);
             }
 
             return response()->json(['message' => 'Có lỗi xảy ra khi tạo quyền.'], 500);
@@ -134,7 +136,7 @@ class PermissionController extends BaseController
     public function update(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'key' => 'sometimes|string|max:255',
+            'key' => ['sometimes', 'required', 'string', 'max:255', Rule::unique('permissions', 'key')->ignore($id)],
             'name' => 'sometimes|string|max:255',
             'type' => 'sometimes|in:admin,employee,both',
             'module' => 'nullable|string|max:100',
@@ -159,7 +161,8 @@ class PermissionController extends BaseController
                 'permission' => $permission,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'Permission không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('Permission update error', [
@@ -169,8 +172,8 @@ class PermissionController extends BaseController
                 'input' => $validated,
             ]);
 
-            if (str_contains($e->getMessage(), 'permissions_key_display_area_unique')) {
-                return response()->json(['message' => 'Permission key và display_area đã tồn tại.'], 422);
+            if (str_contains($e->getMessage(), 'permissions_key_unique') || str_contains($e->getMessage(), 'permissions_key_display_area_unique')) {
+                return response()->json(['message' => 'Mã quyền đã tồn tại.'], 422);
             }
 
             return response()->json(['message' => 'Có lỗi xảy ra khi cập nhật quyền.'], 500);
@@ -197,7 +200,8 @@ class PermissionController extends BaseController
                 'message' => 'Xóa quyền thành công!'.($deletedSidebarCount > 0 ? " (đã xóa {$deletedSidebarCount} sidebar items liên quan)" : ''),
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'Permission không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('Permission destroy error', [
@@ -305,7 +309,8 @@ class PermissionController extends BaseController
                 'sidebar_item' => $sidebarItem,
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'SidebarItem không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('Update sidebar item error', [
@@ -333,7 +338,8 @@ class PermissionController extends BaseController
                 'message' => 'Xóa SidebarItem thành công!',
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            \Illuminate\Support\Facades\Log::error(basename(__FILE__) . ' - ' . __FUNCTION__ . ' - Error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::error(basename(__FILE__).' - '.__FUNCTION__.' - Error: '.$e->getMessage());
+
             return response()->json(['message' => 'SidebarItem không tồn tại.'], 404);
         } catch (\Throwable $e) {
             Log::error('Destroy sidebar item error', [

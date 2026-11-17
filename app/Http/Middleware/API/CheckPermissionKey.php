@@ -16,7 +16,7 @@ class CheckPermissionKey
      *          middleware('api.can:view_dashboard,manage_employees') // OR logic
      *
      * Logic:
-     *   1. Super Admin / Admin / Co Admin → luôn được phép (admin-level roles)
+     *   1. Chỉ Super Admin được bỏ qua kiểm tra quyền
      *   2. Check exact key match trước
      *   3. Không dùng quyền khác cùng module để vượt quyền được yêu cầu
      *   4. Nếu truyền nhiều permission keys (phân cách bằng dấu phẩy) → chỉ cần 1 match
@@ -36,12 +36,10 @@ class CheckPermissionKey
             return response()->json(['message' => 'Bạn chưa được gán vai trò.'], 403);
         }
 
-        $roleName = strtolower(trim($user->role->role_name));
+        $roleName = preg_replace('/\s+/', ' ', strtolower(trim($user->role->role_name)));
+        $roleName = preg_replace('/^(co|super)[-_]admin$/', '$1 admin', $roleName);
 
-        // Admin-level roles luôn bypass — họ là quản trị viên
-        $adminRoles = ['super admin', 'admin', 'co admin'];
-
-        if (in_array($roleName, $adminRoles, true)) {
+        if ($roleName === 'super admin') {
             return $next($request);
         }
 

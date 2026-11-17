@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Employee;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendRequestFormNotificationJob;
 use App\Models\RequestForm;
+use App\Support\RbacPermissionCatalog;
+use App\Support\RequestFormAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -111,11 +113,7 @@ class EmpRequestFormController extends Controller
     {
         $currentUserId = Auth::id();
 
-        // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
-
-        // Kiểm tra user hiện tại có phải supervisor không
-        if (! in_array($currentUserId, $supervisorIds)) {
+        if (! Auth::user()?->hasPermission(RbacPermissionCatalog::SUPERVISOR_PERMISSION)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Bạn không có quyền truy cập danh sách này',
@@ -216,11 +214,7 @@ class EmpRequestFormController extends Controller
     {
         $currentUserId = Auth::id();
 
-        // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
-
-        // Kiểm tra user hiện tại có phải supervisor không
-        if (! in_array($currentUserId, $supervisorIds)) {
+        if (! Auth::user()?->hasPermission(RbacPermissionCatalog::SUPERVISOR_PERMISSION)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Bạn không có quyền truy cập',
@@ -296,11 +290,7 @@ class EmpRequestFormController extends Controller
     {
         $currentUserId = Auth::id();
 
-        // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
-
-        // Kiểm tra user hiện tại có phải supervisor không
-        if (! in_array($currentUserId, $supervisorIds)) {
+        if (! Auth::user()?->hasPermission(RbacPermissionCatalog::SUPERVISOR_PERMISSION)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Bạn không có quyền duyệt đơn',
@@ -416,11 +406,7 @@ class EmpRequestFormController extends Controller
     {
         $currentUserId = Auth::id();
 
-        // Danh sách supervisor employee IDs được phép truy cập
-        $supervisorIds = ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'];
-
-        // Kiểm tra user hiện tại có phải supervisor không
-        if (! in_array($currentUserId, $supervisorIds)) {
+        if (! Auth::user()?->hasPermission(RbacPermissionCatalog::SUPERVISOR_PERMISSION)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Bạn không có quyền từ chối đơn',
@@ -520,7 +506,7 @@ class EmpRequestFormController extends Controller
             $request->validate([
                 'supervisor_id' => (new RequestForm(['employee_id' => Auth::id()]))->requiresManagerApproval()
                     ? ['nullable']
-                    : ['required', 'exists:employees,id', 'in:25060406,22120703,22120905,22120304,22122809,22121822', 'not_in:'.Auth::id()],
+                    : ['required', \Illuminate\Validation\Rule::in(RequestFormAccess::supervisors()->pluck('id')->all()), 'not_in:'.Auth::id()],
                 'digital_signature_applicant' => ['required'],
             ]);
         }
@@ -760,7 +746,7 @@ class EmpRequestFormController extends Controller
             }
             $request->validate(\App\Services\OvertimeApprovalService::rules());
             if ($request->has('supervisor_id') && ! $requestForm->requiresManagerApproval()) {
-                $request->validate(['supervisor_id' => ['required', 'exists:employees,id', 'in:25060406,22120703,22120905,22120304,22122809,22121822', 'not_in:'.Auth::id()]]);
+                $request->validate(['supervisor_id' => ['required', \Illuminate\Validation\Rule::in(RequestFormAccess::supervisors()->pluck('id')->all()), 'not_in:'.Auth::id()]]);
             }
         }
 
@@ -958,9 +944,14 @@ class EmpRequestFormController extends Controller
                 });
         });
 
+        // Permission eligibility must not be cached with the hour-long name list.
+        $supervisorIds = RequestFormAccess::supervisors()->pluck('id')->map(fn ($id) => (string) $id)->all();
+
         return response()->json([
             'success' => true,
-            'data' => $employees,
+            'data' => $employees->map(fn ($employee) => array_merge($employee, [
+                'can_approve_assigned_forms' => in_array((string) $employee['id'], $supervisorIds, true),
+            ])),
         ]);
     }
 

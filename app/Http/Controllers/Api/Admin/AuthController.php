@@ -102,36 +102,8 @@ class AuthController extends BaseController
         $tokenResult->accessToken->expires_at = $expiresAt;
         $tokenResult->accessToken->session_id = $sessionId;
         $tokenResult->accessToken->save();
-        $permissionSelect = ['permissions.id', 'permissions.key', 'permissions.name', 'permissions.type', 'permissions.display_area', 'permissions.icon', 'permissions.url', 'permissions.sort_order'];
-        $sidebarEager = [
-            'sidebarItems' => function ($q) {
-                $q->select(['id', 'permission_id', 'key', 'title', 'icon', 'url']);
-            },
-        ];
-
-        // 1. Lấy quyền từ Role
-        $rolePermissions = $user->role
-            ->permissions()
-            ->select($permissionSelect)
-            ->orderBy('permissions.sort_order')
-            ->with($sidebarEager)
-            ->get();
-
-        // 2. Lấy danh sách quyền bị deny
-        $deniedIds = $user->deniedPermissions()->pluck('permissions.id')->toArray();
-
-        // 3. Lọc bỏ quyền bị deny khỏi role permissions
-        $permissions = $rolePermissions->filter(fn ($p) => ! in_array($p->id, $deniedIds));
-
-        // 4. Lấy quyền được grant thêm
-        $grantedPermissions = $user->grantedPermissions()
-            ->select($permissionSelect)
-            ->with($sidebarEager)
-            ->get();
-
-        // 5. Merge granted + unique + sort
-        $permissions = $permissions->merge($grantedPermissions)
-            ->unique('id')
+        $permissions = $user->getEffectivePermissions()
+            ->load('sidebarItems')
             ->sortBy('sort_order')
             ->values();
 
@@ -218,6 +190,7 @@ class AuthController extends BaseController
                 'image' => $user->photo,
                 'session_id' => $sessionId,
                 'auth_channel_name' => AuthSessionRevoked::channelNameFor($user),
+                'permissions' => $user->getEffectivePermissions()->load('sidebarItems')->sortBy('sort_order')->values(),
             ], 200);
         } else {
             return response()->json([

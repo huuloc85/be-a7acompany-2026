@@ -84,19 +84,23 @@ class RBACController extends BaseController
     {
         $validated = $request->validate([
             'role_ids' => 'required|array|min:1',
-            'role_ids.*' => 'exists:roles,id',
-            'permissions' => 'array',
-            'permissions.*' => 'exists:permissions,id',
+            'role_ids.*' => 'integer|distinct|exists:roles,id',
+            'permissions' => 'present|array',
+            'permissions.*' => 'integer|distinct|exists:permissions,id',
+            'unchanged_permissions' => 'sometimes|array',
+            'unchanged_permissions.*' => 'integer|distinct|exists:permissions,id',
         ]);
 
         try {
             DB::beginTransaction();
 
-            $permissions = $validated['permissions'] ?? [];
+            $unchanged = $validated['unchanged_permissions'] ?? [];
+            $permissions = array_diff($validated['permissions'], $unchanged);
             $updatedRoles = Role::whereIn('id', $validated['role_ids'])->get();
 
-            $updatedRoles->each(function ($role) use ($permissions) {
-                $role->permissions()->sync($permissions);
+            $updatedRoles->each(function ($role) use ($permissions, $unchanged) {
+                $preserved = $role->permissions()->whereIn('permissions.id', $unchanged)->pluck('permissions.id')->all();
+                $role->permissions()->sync(array_merge($permissions, $preserved));
             });
 
             DB::commit();
@@ -397,11 +401,17 @@ class RBACController extends BaseController
     public function saveUserPermissions(Request $request, string $id): JsonResponse
     {
         $request->validate([
-            'granted_ids' => 'sometimes|array',
-            'granted_ids.*' => 'integer|exists:permissions,id',
-            'denied_ids' => 'sometimes|array',
-            'denied_ids.*' => 'integer|exists:permissions,id',
+            'granted_ids' => 'present|array',
+            'granted_ids.*' => 'integer|distinct|exists:permissions,id',
+            'denied_ids' => 'present|array',
+            'denied_ids.*' => 'integer|distinct|exists:permissions,id',
         ]);
+
+        if (array_intersect($request->input('granted_ids'), $request->input('denied_ids'))) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'denied_ids' => 'Không thể vừa cấp vừa chặn cùng một quyền.',
+            ]);
+        }
 
         try {
             $user = Employee::findOrFail($id);
@@ -409,9 +419,10 @@ class RBACController extends BaseController
             $grantedIds = $request->input('granted_ids', []);
             $deniedIds = $request->input('denied_ids', []);
 
-            // Sync cả 2 bảng
-            $user->grantedPermissions()->sync($grantedIds);
-            $user->deniedPermissions()->sync($deniedIds);
+            DB::transaction(function () use ($user, $grantedIds, $deniedIds) {
+                $user->grantedPermissions()->sync($grantedIds);
+                $user->deniedPermissions()->sync($deniedIds);
+            });
 
             $count = count($grantedIds) + count($deniedIds);
 

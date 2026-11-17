@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
-use App\Models\Employee;
 use App\Services\AttendanceEventWriter;
 use App\Support\AttendanceEmployeeCode;
 use Carbon\Carbon;
@@ -47,7 +46,6 @@ class AttendanceRecordController extends BaseController
 
         $eventRows = [];
         $unmatchedEvents = [];
-        $employeeIds = Employee::withTrashed()->pluck('id')->mapWithKeys(fn ($id) => [(string) $id => true])->all();
         $searchPosition = 0;
         $maxResults = 30;
         $writer = new AttendanceEventWriter;
@@ -86,7 +84,8 @@ class AttendanceRecordController extends BaseController
                         continue;
                     }
 
-                    if (! isset($employeeIds[$employeeCode])) {
+                    // The writer resolves persisted code changes before checking the employee.
+                    if ($writer->store($employeeCode, Carbon::parse($ev['time'] ?? null)) === null) {
                         $unmatchedEvents[] = [
                             'Time' => $ev['time'] ?? '',
                             'Name' => $ev['name'] ?? '',
@@ -102,8 +101,6 @@ class AttendanceRecordController extends BaseController
                         'EmployeeNo' => $employeeCode,
                     ];
 
-                    // Lưu dữ liệu hợp lệ vào database
-                    $writer->store($employeeCode, Carbon::parse($ev['time'] ?? null));
                 }
 
                 $numReturned = $acs['numOfMatches'] ?? 0;

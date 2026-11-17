@@ -11,6 +11,8 @@ class SendStamp extends Model
 
     protected $fillable = [
         'product_id',
+        'manual_product',
+        'manual_product_key',
         'employee_id',
         'manager_id',
         'date',
@@ -21,6 +23,10 @@ class SendStamp extends Model
         'status',
         'manager_time',
         'purpose',
+    ];
+
+    protected $casts = [
+        'manual_product' => 'array',
     ];
 
     // Quan hệ với Employee
