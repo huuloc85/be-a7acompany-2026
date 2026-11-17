@@ -28,7 +28,11 @@ class EmployeeAutomaticDeviceSyncTest extends TestCase
         Container::setInstance($app);
         Facade::setFacadeApplication($app);
         DB::swap(Mockery::mock());
+        \Illuminate\Support\Facades\Log::swap(Mockery::mock()->shouldReceive('error')->andReturnUsing(function ($message, $context) {
+            throw new \RuntimeException($context['message']);
+        })->getMock());
         $hash = Mockery::mock(Hasher::class);
+        $hash->shouldReceive('driver')->with('bcrypt')->andReturnSelf();
         $hash->shouldReceive('make')->andReturn('test-hash');
         $app->instance('hash', $hash);
         $response = Mockery::mock(ResponseFactory::class);
@@ -57,6 +61,11 @@ class EmployeeAutomaticDeviceSyncTest extends TestCase
     public function test_creation_queues_once_before_commit_without_second_confirmation(int $role, bool $sync): void
     {
         $employee = (object) ['id' => '00123456', 'name' => 'Example', 'role_id' => $role];
+        Mockery::mock('alias:App\\Services\\EmployeePrivilegeGuard')
+            ->shouldReceive('check')->once()->with($role);
+        $transfers = Mockery::mock(\App\Services\EmployeeCodeTransferService::class);
+        $transfers->shouldReceive('assertUnused')->once()->with('00123456');
+        Container::getInstance()->instance(\App\Services\EmployeeCodeTransferService::class, $transfers);
         $request = Mockery::mock(Request::class);
         $request->shouldReceive('validate')->once()->andReturn((array) $employee);
         $request->shouldReceive('hasFile')->with('card_photo')->andReturn(false);

@@ -1,6 +1,6 @@
 # Kiểm tra RBAC — 17/11/2026
 
-> Cập nhật: đã triển khai phần chuẩn hóa an toàn trong code theo [RBAC-NORMALIZATION-2026-11-17.md](RBAC-NORMALIZATION-2026-11-17.md). Phạm vi được xác nhận là FE React, API BE và database; Blade/web legacy không thuộc tác vụ. Các số liệu và mục “chưa gộp” bên dưới ghi nhận giai đoạn kiểm tra ban đầu; chưa áp dụng chuyển đổi vào database thật.
+> Cập nhật: đã áp dụng chuẩn hóa và migration unique key trực tiếp vào database release theo yêu cầu người dùng ngày 17/11/2026; xem [RBAC-NORMALIZATION-2026-11-17.md](RBAC-NORMALIZATION-2026-11-17.md) để biết kết quả và bản sao lưu. Phạm vi là FE React, API BE và database; Blade/web legacy không thuộc tác vụ. Các số liệu và mục “chưa gộp/chưa chạy” bên dưới ghi nhận giai đoạn kiểm tra ban đầu, trước lần áp dụng này. Chưa triển khai code FE/BE lên host trong tác vụ.
 
 ## Phạm vi và dữ liệu đã kiểm tra
 

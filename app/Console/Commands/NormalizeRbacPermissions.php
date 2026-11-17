@@ -70,7 +70,7 @@ class NormalizeRbacPermissions extends Command
                     throw new \RuntimeException("Thiếu quyền đích {$canonical}; chưa thay đổi dữ liệu.");
                 }
             }
-            foreach ([RbacPermissionCatalog::SUPERVISOR_PERMISSION, 'manage_daily_activity'] as $key) {
+            foreach ([RbacPermissionCatalog::SUPERVISOR_PERMISSION] as $key) {
                 if ($lockedPermissions->has($key)) {
                     throw new \RuntimeException("Quyền {$key} đã tồn tại; cần đối chiếu chuyển đổi dở dang trước khi tiếp tục.");
                 }
@@ -130,34 +130,21 @@ class NormalizeRbacPermissions extends Command
                 ]);
             }
             $supervisor = $this->permission(RbacPermissionCatalog::SUPERVISOR_PERMISSION, 'Duyệt đơn được giao', 'request_forms', '/admin/request-forms');
-            $activityManage = $this->permission('manage_daily_activity', 'Quản lý hoạt động trong ngày', 'activity', null);
             $schedule = DB::table('permissions')->where('key', 'view_schedule')->value('id');
             $scheduleRead = DB::table('permissions')->where('key', 'view_team_schedule')->value('id');
             if (! $schedule || ! $scheduleRead) {
                 throw new \RuntimeException('Thiếu quyền lịch/hoạt động; toàn bộ thay đổi đã được rollback.');
-            }
-            // Daily activity writes previously used view_schedule. Preserve those assignments before splitting.
-            foreach (DB::table('role_permission')->where('permission_id', $schedule)->get() as $link) {
-                DB::table('role_permission')->insertOrIgnore(['role_id' => $link->role_id, 'permission_id' => $activityManage]);
-            }
-            foreach (['user_granted_permissions', 'user_denied_permissions'] as $table) {
-                foreach (DB::table($table)->where('permission_id', $schedule)->get() as $link) {
-                    $this->linkUser($table, $link->user_id, $activityManage);
-                }
             }
             $leaderNames = ['tổ trưởng sản xuất', 'tổ phó sản xuất', 'tổ trưởng ngoại quan', 'tổ trưởng qa', 'tổ trưởng qc', 'tổ trưởng kho', 'tổ trưởng khuôn'];
             $leaderIds = $roles->filter(fn ($r) => in_array((string) $r->id, ['14', '18', '19', '23', '24', '25'], true)
                 || in_array(mb_strtolower(trim($r->role_name)), $leaderNames, true))->pluck('id')->all();
             foreach ($leaderIds as $roleId) {
                 DB::table('role_permission')->insertOrIgnore(['role_id' => $roleId, 'permission_id' => $scheduleRead]);
-                // The previous schedule middleware always made leaders read-only, even with view_schedule.
-                DB::table('role_permission')->where('role_id', $roleId)->where('permission_id', $schedule)->delete();
             }
             foreach ($employees->whereIn('role_id', $leaderIds) as $employee) {
                 foreach (['user_granted_permissions', 'user_denied_permissions'] as $table) {
                     if (DB::table($table)->where('user_id', $employee->id)->where('permission_id', $schedule)->exists()) {
                         $this->linkUser($table, $employee->id, $scheduleRead);
-                        DB::table($table)->where('user_id', $employee->id)->where('permission_id', $schedule)->delete();
                     }
                 }
             }
@@ -186,18 +173,17 @@ class NormalizeRbacPermissions extends Command
                 $canReadSchedule = $isLeader || (string) $employee->id === '23080130'
                     ? ! $scheduleDenied : (bool) array_intersect($expected, ['view_schedule', 'view_team_schedule']);
                 $canWriteSchedule = ! $isLeader && in_array('view_schedule', $expected, true);
-                if ($canReadSchedule !== (bool) array_intersect($actual, ['view_schedule', 'view_team_schedule'])
-                    || $canWriteSchedule !== in_array('view_schedule', $actual, true)) {
+                $actualCanReadSchedule = ! ($isLeader && $scheduleDenied)
+                    && (bool) array_intersect($actual, ['view_schedule', 'view_team_schedule']);
+                if ($canReadSchedule !== $actualCanReadSchedule
+                    || $canWriteSchedule !== (! $isLeader && in_array('view_schedule', $actual, true))) {
                     throw new \RuntimeException("Quyền lịch của tài khoản {$employee->id} thay đổi; toàn bộ chuyển đổi đã được rollback.");
-                }
-                if (in_array('view_schedule', $expected, true)) {
-                    $expected[] = 'manage_daily_activity';
                 }
                 if (in_array((string) $employee->id, ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'], true)) {
                     $expected[] = RbacPermissionCatalog::SUPERVISOR_PERMISSION;
                 }
-                $expected = array_values(array_diff($expected, ['view_schedule', 'view_team_schedule']));
-                $actual = array_values(array_diff($actual, ['view_schedule', 'view_team_schedule']));
+                $expected = array_values(array_diff($expected, ['view_team_schedule']));
+                $actual = array_values(array_diff($actual, ['view_team_schedule']));
                 sort($expected);
                 sort($actual);
                 if ($expected !== $actual) {

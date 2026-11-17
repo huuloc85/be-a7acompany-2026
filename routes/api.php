@@ -98,6 +98,9 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
 
     // Employees (Quản Lý Nhân Sự)
     Route::middleware(['api.can:view_employee_management'])->prefix('employees')->group(function () {
+        Route::get('/{id}/attendance-code-transfer', [\App\Http\Controllers\Api\Admin\AttendanceCodeTransferController::class, 'show']);
+        Route::post('/{id}/attendance-code-transfer/{transfer}/confirm', [\App\Http\Controllers\Api\Admin\AttendanceCodeTransferController::class, 'confirm'])->whereNumber('transfer');
+        Route::post('/{id}/attendance-code-transfer/{transfer}/retry', [\App\Http\Controllers\Api\Admin\AttendanceCodeTransferController::class, 'retry'])->whereNumber('transfer');
         Route::post('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'store']);
         Route::get('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'show']);
         Route::delete('/{id}/attendance-device', [\App\Http\Controllers\Api\Admin\AttendanceDeviceEmployeeController::class, 'destroy']);
@@ -244,12 +247,12 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::post('/reject/{id}', [StampController::class, 'rejectPrint']);
     });
 
-    Route::prefix('daily-schedules')->group(function () {
-        Route::get('/', [DailyScheduleController::class, 'index'])->middleware('api.can:manage_daily_activity');
+    Route::middleware(['api.can:view_schedule'])->prefix('daily-schedules')->group(function () {
+        Route::get('/', [DailyScheduleController::class, 'index']);
         // Route::post('/', [DailyScheduleController::class, 'store']);
-        Route::get('/{id}', [DailyScheduleController::class, 'show'])->middleware('api.can:manage_daily_activity');
-        Route::patch('/{id}', [DailyScheduleController::class, 'update'])->middleware('api.can:manage_daily_activity');
-        Route::delete('/{id}', [DailyScheduleController::class, 'destroy'])->middleware('api.can:manage_daily_activity');
+        Route::get('/{id}', [DailyScheduleController::class, 'show']);
+        Route::patch('/{id}', [DailyScheduleController::class, 'update']);
+        Route::delete('/{id}', [DailyScheduleController::class, 'destroy']);
     });
 
     Route::middleware(['api.can:view_history'])->prefix('history')->group(function () {
