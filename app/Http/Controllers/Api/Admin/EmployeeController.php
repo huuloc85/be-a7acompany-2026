@@ -17,6 +17,7 @@ use App\Models\Employee;
 use App\Models\SalaryManager;
 use App\Models\SalaryOfficialA7A;
 use App\Models\SalaryOfficialVVP;
+use App\Services\EmployeeCodeChangeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -270,10 +271,10 @@ class EmployeeController extends BaseController
                     'updated_at',
                 )
                 ->whereNotIn('role_id', [15, 21, 22, 1])
-                ->findOrFail($id);
+                ->lockForUpdate()->findOrFail($id);
 
             $validated = $request->validate([
-                // 'id' => 'sometimes|string|unique:employees,id,' . $id,
+                'id' => ['sometimes', 'required', 'string', 'max:20', 'regex:/^[0-9]+$/', \Illuminate\Validation\Rule::unique('employees', 'id')->ignore($employee->getKey(), 'id')],
                 'name' => 'sometimes|string|max:255',
                 'phone' => 'sometimes|string|regex:/^0[0-9]{9}$/|unique:employees,phone,'.$id,
                 'email' => 'nullable|email|unique:employees,email,'.$id,
@@ -311,7 +312,7 @@ class EmployeeController extends BaseController
                 $validated['card_photo'] = UploadHelper::upload($file, 'cardPhoto');
             }
 
-            $employee->update($validated);
+            app(EmployeeCodeChangeService::class)->update($employee, $validated);
 
             DB::commit();
             // if ($oldPhoto) {
