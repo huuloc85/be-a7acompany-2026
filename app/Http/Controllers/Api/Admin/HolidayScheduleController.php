@@ -19,7 +19,7 @@ class HolidayScheduleController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'revision' => ['required', 'integer', 'min:0'],
-            'schedules' => ['present', 'array', 'max:4'],
+            'schedules' => ['present', 'array', 'max:'.count(HolidaySchedule::HOLIDAYS)],
             'schedules.*' => ['array:holiday,enabled,startsAt,endsAt'],
             'schedules.*.holiday' => ['required', Rule::in(HolidaySchedule::HOLIDAYS), 'distinct'],
             'schedules.*.enabled' => ['required', 'boolean'],

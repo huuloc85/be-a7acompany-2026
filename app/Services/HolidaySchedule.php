@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\File;
 
 class HolidaySchedule
 {
-    public const HOLIDAYS = ['new-year', 'april', 'mid-autumn', 'christmas'];
+    public const HOLIDAYS = ['new-year', 'april', 'mid-autumn', 'christmas', 'solar-new-year', 'vietnam-culture'];
 
     private string $path;
 

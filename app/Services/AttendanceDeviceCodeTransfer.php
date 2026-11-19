@@ -52,19 +52,48 @@ class AttendanceDeviceCodeTransfer
 
     private function fingerprints(string $code, array $profile): array
     {
-        $info = $this->request('post', 'FingerPrintUpload', ['FingerPrintCond' => [
-            'searchID' => Str::random(32), 'employeeNo' => $code,
-        ]])['FingerPrintInfo'] ?? [];
+        $count = filter_var($profile['numOfFP'] ?? null, FILTER_VALIDATE_INT);
+        if ($count === false || $count < 0 || ! (is_int($profile['numOfFP']) || is_string($profile['numOfFP']))) {
+            throw new UnexpectedValueException("Máy chưa cung cấp số vân tay đã đăng ký cho mã {$code}. Vui lòng báo IT kiểm tra hồ sơ trên máy chấm công.");
+        }
+        $fingers = $this->readFingerprintList($code);
+        if (count($fingers) < $count) {
+            // Retry the documented finger positions when the bulk response is incomplete.
+            $bySlot = [];
+            for ($slot = 1; $slot <= 10; $slot++) {
+                $bySlot += $this->readFingerprintList($code, $slot);
+            }
+            foreach ($fingers as $key => $finger) {
+                if (! isset($bySlot[$key]) || ! $this->sameFingerprint($finger, $bySlot[$key])) {
+                    throw new UnexpectedValueException("Hai lần đọc vân tay của mã {$code} cho kết quả khác nhau. Vui lòng kiểm tra hồ sơ trên máy chấm công.");
+                }
+            }
+            $fingers = $bySlot;
+        }
+        $received = count($fingers);
+        if ($received !== $count) {
+            throw new UnexpectedValueException("Mã {$code} có {$count} vân tay đã đăng ký. Máy trả về {$received} mẫu. Vui lòng báo IT kiểm tra trên máy chấm công.");
+        }
+
+        return $fingers;
+    }
+
+    private function readFingerprintList(string $code, ?int $slot = null): array
+    {
+        $condition = ['searchID' => Str::random(32), 'employeeNo' => $code];
+        if ($slot !== null) {
+            $condition['fingerPrintID'] = $slot;
+        }
+        $info = $this->request('post', 'FingerPrintUpload', ['FingerPrintCond' => $condition])['FingerPrintInfo'] ?? [];
         $items = $info['FingerPrintList'] ?? [];
         if (! in_array($info['status'] ?? '', ['OK', 'NoFP'], true) || ! is_array($items)
-            || ! isset($profile['numOfFP']) || ! is_numeric($profile['numOfFP'])
-            || count($items) !== (int) $profile['numOfFP']
             || (($info['status'] === 'NoFP') !== ($items === []))) {
-            throw new UnexpectedValueException('Không đọc đủ vân tay để đối chiếu. Giữ mã cũ; kiểm tra hỗ trợ ISAPI hoặc lấy lại vân tay.');
+            throw new UnexpectedValueException("Máy trả về danh sách vân tay không hợp lệ cho mã {$code}. Vui lòng báo IT kiểm tra kết nối với máy chấm công.");
         }
         $result = [];
         foreach ($items as $item) {
             if (! is_array($item) || ! is_int($item['fingerPrintID'] ?? null) || $item['fingerPrintID'] < 1 || $item['fingerPrintID'] > 10
+                || ($slot !== null && $item['fingerPrintID'] !== $slot)
                 || ! is_int($item['cardReaderNo'] ?? null) || $item['cardReaderNo'] < 1
                 || ! is_string($item['fingerData'] ?? null) || $item['fingerData'] === ''
                 || ! in_array($item['fingerType'] ?? '', ['normalFP', 'hijackFP', 'patrolFP', 'superFP', 'dismissingFP'], true)) {
