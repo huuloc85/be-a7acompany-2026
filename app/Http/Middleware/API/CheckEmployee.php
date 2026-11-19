@@ -9,7 +9,8 @@ class CheckEmployee
 {
     /**
      * Handle an incoming request.
-     * Chỉ cho phép Employee truy cập. Admin/Co Admin bị chặn.
+     * Chỉ cho phép Employee truy cập. Admin/Co Admin chỉ được dùng luồng
+     * yêu cầu in tem khi có quyền request_label.
      * Super Admin luôn bypass (quyền truy cập toàn hệ thống).
      *
      * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
@@ -27,7 +28,8 @@ class CheckEmployee
             return response()->json(['message' => 'Bạn chưa được gán vai trò.'], 403);
         }
 
-        $roleName = strtolower(trim($user->role->role_name));
+        $roleName = preg_replace('/\s+/', ' ', strtolower(trim($user->role->role_name)));
+        $roleName = preg_replace('/^(co|super)[-_]admin$/', '$1 admin', $roleName);
 
         // Super Admin luôn bypass — quyền truy cập toàn hệ thống
         if ($roleName === 'super admin') {
@@ -38,6 +40,14 @@ class CheckEmployee
         $adminRoles = ['admin', 'co admin'];
 
         if (in_array($roleName, $adminRoles, true)) {
+            if ($request->is(
+                'api/employee/stamps/request',
+                'api/employee/stamps/check-duplicate',
+                'api/employee/stamps/history'
+            ) && $user->hasPermission('request_label')) {
+                return $next($request);
+            }
+
             return response()->json([
                 'message' => 'Chức năng này chỉ dành cho nhân viên.',
             ], 403);
