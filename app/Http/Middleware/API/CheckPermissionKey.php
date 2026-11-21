@@ -16,7 +16,7 @@ class CheckPermissionKey
      *          middleware('api.can:view_dashboard,manage_employees') // OR logic
      *
      * Logic:
-     *   1. Chỉ Super Admin được bỏ qua kiểm tra quyền
+     *   1. Admin/Co Admin/Super Admin có toàn quyền nghiệp vụ
      *   2. Check exact key match trước
      *   3. Không dùng quyền khác cùng module để vượt quyền được yêu cầu
      *   4. Nếu truyền nhiều permission keys (phân cách bằng dấu phẩy) → chỉ cần 1 match
@@ -39,7 +39,7 @@ class CheckPermissionKey
         $roleName = preg_replace('/\s+/', ' ', strtolower(trim($user->role->role_name)));
         $roleName = preg_replace('/^(co|super)[-_]admin$/', '$1 admin', $roleName);
 
-        if ($roleName === 'super admin') {
+        if ($user->hasFullBusinessAccess()) {
             return $next($request);
         }
 
