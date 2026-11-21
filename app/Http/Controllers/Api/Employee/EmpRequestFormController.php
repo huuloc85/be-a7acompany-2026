@@ -501,6 +501,9 @@ class EmpRequestFormController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        if ($request->type === RequestForm::TYPE_DON_XIN_RA_NGOAI) {
+            $request->validate(\App\Services\AttendanceExceptionService::rules());
+        }
         if ($request->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
             $request->validate(\App\Services\OvertimeApprovalService::rules());
             $request->validate([
@@ -734,6 +737,13 @@ class EmpRequestFormController extends Controller
                 'success' => false,
                 'message' => 'Bạn không có quyền cập nhật đơn này',
             ], 403);
+        }
+
+        if ($requestForm->type === RequestForm::TYPE_DON_XIN_RA_NGOAI) {
+            if ($requestForm->status !== RequestForm::STATUS_PENDING || $requestForm->digital_signature_supervisor || $requestForm->digital_signature_manager) {
+                return response()->json(['message' => 'Đơn ra ngoài đã được xử lý, không thể sửa nội dung.'], 403);
+            }
+            $request->validate(\App\Services\AttendanceExceptionService::rules());
         }
 
         if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA) {

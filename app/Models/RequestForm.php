@@ -21,6 +21,8 @@ class RequestForm extends Model
 
     const TYPE_DON_XIN_DI_TRE_VE_SOM = 'don_xin_di_tre_ve_som';
 
+    const TYPE_DON_XIN_RA_NGOAI = 'don_xin_ra_ngoai';
+
     const TYPE_DON_XIN_TANG_CA = 'don_xin_tang_ca';
 
     // Trạng thái đơn
@@ -82,6 +84,7 @@ class RequestForm extends Model
             self::TYPE_DON_XIN_NGHI_VIEC => 'Đơn xin nghỉ việc',
             self::TYPE_DON_XIN_NGHI_PHEP => 'Đơn xin nghỉ phép',
             self::TYPE_DON_XIN_DI_TRE_VE_SOM => 'Đơn xin đi trễ - về sớm',
+            self::TYPE_DON_XIN_RA_NGOAI => 'Đơn xin ra ngoài',
             self::TYPE_DON_XIN_TANG_CA => 'Đơn xin tăng ca',
         ];
     }

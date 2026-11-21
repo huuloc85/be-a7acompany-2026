@@ -126,7 +126,10 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
 
     // Attendance Records (Quản Lý Chấm Công)
     Route::middleware(['api.can:view_attendance'])->prefix('attendances')->group(function () {
+        Route::get('/employees', [AttendanceHistoryController::class, 'employees']);
         Route::post('/overtime-approval', [\App\Http\Controllers\Api\Admin\OvertimeApprovalController::class, 'store'])
+            ->middleware(\App\Http\Middleware\API\CheckAdmin::class);
+        Route::post('/exception-approval', [\App\Http\Controllers\Api\Admin\AttendanceExceptionApprovalController::class, 'store'])
             ->middleware(\App\Http\Middleware\API\CheckAdmin::class);
         Route::get('/daily-results', [\App\Http\Controllers\Api\Admin\AttendanceDailyResultController::class, 'index']);
         Route::get('/device-imports', [\App\Http\Controllers\Api\Admin\AttendanceImportController::class, 'index']);

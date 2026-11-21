@@ -24,9 +24,9 @@ class DashboardController extends BaseController
         if (! $user?->role) {
             return response()->json(['message' => 'Bạn chưa được gán vai trò.'], 403);
         }
-        $hasFullBusinessAccess = $user->hasFullBusinessAccess();
+        $role = preg_replace('/^(co|super)[-_]admin$/', '$1 admin', strtolower(trim($user->role->role_name)));
         $keys = $user->getEffectivePermissions()->pluck('key')->all();
-        $can = fn (array $required) => $hasFullBusinessAccess || count(array_intersect($keys, $required)) > 0;
+        $can = fn (array $required) => $role === 'super admin' || count(array_intersect($keys, $required)) > 0;
         $today = Carbon::today();
         $startOfMonth = $today->copy()->startOfMonth();
         $endOfMonth = $today->copy()->endOfMonth();

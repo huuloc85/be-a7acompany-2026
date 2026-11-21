@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Helpers\HandleError;
 use App\Helpers\SeptemberAttendanceHours;
 use App\Models\AttendanceRecord;
+use App\Models\Employee;
 use App\Models\ScheduleDetail;
 use App\Services\AttendanceDailyResultStore;
 use Illuminate\Http\Request;
@@ -15,6 +16,16 @@ use Spatie\QueryBuilder\QueryBuilder;
 
 class AttendanceHistoryController extends BaseController
 {
+    public function employees()
+    {
+        $employees = Employee::query()
+            ->whereNotIn('role_id', [15, 21, 22, 1])
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json(['data' => $employees]);
+    }
+
     public function index(Request $request)
     {
         try {
@@ -332,7 +343,9 @@ class AttendanceHistoryController extends BaseController
                 }
 
                 // Calculate attendance results (time_in, time_out, total_hours, shift, day_type, etc.)
+                $rawAttendance = $result;
                 $result = $this->calculateAttendances($result);
+                $result = app(\App\Services\AttendanceExceptionService::class)->annotate($result, $rawAttendance);
                 app(AttendanceDailyResultStore::class)->synchronize($result, $request);
                 $result = app(\App\Services\OvertimeApprovalService::class)->annotate($result);
             } else {

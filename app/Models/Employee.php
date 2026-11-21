@@ -89,16 +89,8 @@ class Employee extends Authenticatable
             ->withTimestamps();
     }
 
-    public function hasFullBusinessAccess(): bool
-    {
-        $roleName = preg_replace('/\s+/', ' ', strtolower(trim($this->role?->role_name ?? '')));
-        $roleName = preg_replace('/^(co|super)[-_]admin$/', '$1 admin', $roleName);
-
-        return in_array($roleName, ['admin', 'co admin', 'super admin'], true);
-    }
-
     /**
-     * Nhóm quản trị có toàn quyền nghiệp vụ; các vai trò khác dùng (role ∪ granted) − denied. Chặn theo key,
+     * Tính quyền hiệu lực = (role ∪ granted) − denied. Chặn theo key,
      * kể cả dữ liệu cũ có nhiều permission ID dùng chung một key.
      */
     public function getEffectivePermissions()
@@ -107,20 +99,9 @@ class Employee extends Authenticatable
         $deniedKeys = $this->deniedPermissions->pluck('key')->toArray();
         $grantedPermissions = $this->grantedPermissions;
 
-        $permissions = $rolePermissions->merge($grantedPermissions)
+        return $rolePermissions->merge($grantedPermissions)
             ->reject(fn ($permission) => in_array($permission->key, $deniedKeys, true))
             ->unique('id')->values();
-
-        if ($this->hasFullBusinessAccess()) {
-            $businessPermissions = Permission::where(fn ($query) => $query->whereIn('type', ['admin', 'both'])
-                ->orWhere('key', 'request_label'))
-                ->where('key', '!=', \App\Support\RbacPermissionCatalog::SUPERVISOR_PERMISSION)
-                ->get();
-
-            return $permissions->merge($businessPermissions)->unique('id')->values();
-        }
-
-        return $permissions;
     }
 
     /**
@@ -128,11 +109,6 @@ class Employee extends Authenticatable
      */
     public function hasPermission($key)
     {
-        // Các mục riêng của Super Admin vẫn được bảo vệ bằng middleware api.permission.
-        if ($this->hasFullBusinessAccess()) {
-            return true;
-        }
-
         // Nếu quyền bị deny → không có
         if ($this->deniedPermissions()->where('key', $key)->exists()) {
             return false;
