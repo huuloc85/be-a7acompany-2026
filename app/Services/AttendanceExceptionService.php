@@ -62,13 +62,13 @@ class AttendanceExceptionService
                         'id' => $form->id, 'status' => $form->status, 'rejection_reason' => $form->rejection_reason,
                     ])->values()->all(),
                 ];
-            }, $this->events($row, $punches[$row['employee_id'].'|'.$row['date']] ?? []));
+            }, $this->events($row, $punches[$row['employee_id'].'|'.$row['date']] ?? [], $requests->get((string) $row['employee_id'], collect())));
         }
 
         return $rows;
     }
 
-    public function events(array $row, array $dates): array
+    public function events(array $row, array $dates, ?Collection $requests = null): array
     {
         $shift = (int) $row['shift'];
         if (! in_array($shift, [1, 2], true)) {
@@ -85,25 +85,31 @@ class AttendanceExceptionService
             fn ($value) => Carbon::parse($value, 'Asia/Ho_Chi_Minh')->gte($windowStart)
                 && Carbon::parse($value, 'Asia/Ho_Chi_Minh')->lt($windowEnd)
         )->values()->all();
-        if ($scans === []) {
-            return [];
-        }
         $events = [];
+        // Device timestamps do not identify exit/entry direction. Use submitted requests.
+        foreach ($requests ?? [] as $form) {
+            $data = $form->form_data;
+            if ($form->type !== RequestForm::TYPE_DON_XIN_RA_NGOAI
+                || (string) $form->employee_id !== (string) $row['employee_id']
+                || $this->parse($data['ngay_ap_dung'] ?? null)?->toDateString() !== $row['date']
+                || (int) ($data['ca_lam'] ?? 0) !== $shift) {
+                continue;
+            }
+            $out = $this->requestTime($row, $data['gio_ra_ngoai'] ?? null);
+            $back = $this->requestTime($row, $data['gio_quay_lai'] ?? null);
+            if (! $out || ! $back || ! $back->gt($out)) {
+                continue;
+            }
+            $events[] = [
+                'kind' => 'ra_ngoai', 'time_out' => $out->toDateTimeString(),
+                'time_in' => $back->toDateTimeString(), 'request_id' => $form->id,
+            ];
+        }
+        if ($scans === []) {
+            return $events;
+        }
         if (Carbon::parse($scans[0], 'Asia/Ho_Chi_Minh')->startOfMinute()->gt($start)) {
             $events[] = ['kind' => 'di_tre', 'time_out' => null, 'time_in' => $scans[0]];
-        }
-        // The raw device data has timestamps only. Pair successive in/out scans in order.
-        for ($i = 1; $i + 1 < count($scans); $i += 2) {
-            $out = Carbon::parse($scans[$i], 'Asia/Ho_Chi_Minh');
-            $back = Carbon::parse($scans[$i + 1], 'Asia/Ho_Chi_Minh');
-            $breaks = (string) ($row['calendar_category_id'] ?? '') === '4'
-                ? [[580, 595], [720, 780], [880, 895]]
-                : ($shift === 2 ? [[1530, 1590]] : [[690, 750]]);
-            $duringBreak = collect($breaks)->contains(fn ($break) => $out->gte($day->copy()->addMinutes($break[0]))
-                && $back->lte($day->copy()->addMinutes($break[1])));
-            if (! $duringBreak && $out->lt($end) && $back->gt($start)) {
-                $events[] = ['kind' => 'ra_ngoai', 'time_out' => $scans[$i], 'time_in' => $scans[$i + 1]];
-            }
         }
         // A final checkout is only an early departure once the shift has ended.
         if (count($scans) % 2 === 0 && Carbon::now('Asia/Ho_Chi_Minh')->gte($end)) {
@@ -119,6 +125,9 @@ class AttendanceExceptionService
     public function matchingRequests(Collection $forms, array $row, array $event): Collection
     {
         return $forms->filter(function ($form) use ($row, $event) {
+            if (isset($event['request_id']) && $form->id !== $event['request_id']) {
+                return false;
+            }
             $data = $form->form_data;
             $type = $event['kind'] === 'ra_ngoai' ? RequestForm::TYPE_DON_XIN_RA_NGOAI : RequestForm::TYPE_DON_XIN_DI_TRE_VE_SOM;
             $date = $this->parse($data['ngay_ap_dung'] ?? null)?->toDateString();
