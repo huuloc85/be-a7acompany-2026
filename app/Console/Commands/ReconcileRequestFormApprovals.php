@@ -26,7 +26,7 @@ class ReconcileRequestFormApprovals extends Command
             $query->whereIn('id', $ids);
         }
         foreach ($query->lazyById(100) as $form) {
-            $approver = $form->type === RequestForm::TYPE_DON_XIN_TANG_CA ? $form->supervisor_approved_by : $form->manager_approved_by;
+            $approver = $form->usesTwoSignatures() && ! $form->requiresManagerApproval() ? $form->supervisor_approved_by : $form->manager_approved_by;
             if (! $form->hasRequiredApprovalSignatures() || ! $approver) {
                 continue;
             }

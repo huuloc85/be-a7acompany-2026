@@ -331,15 +331,15 @@ class EmpRequestFormController extends Controller
         }
 
         // Kiểm tra đã có chữ ký supervisor chưa
-        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
+        if ($requestForm->usesTwoSignatures()) {
             if ($requestForm->requiresManagerApproval()) {
                 return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);
             }
             if ((string) $requestForm->employee_id === (string) $currentUserId || ! $requestForm->digital_signature_applicant) {
-                return response()->json(['success' => false, 'message' => 'Đơn tăng ca cần chữ ký người làm đơn và tổ trưởng khác người làm đơn.'], 422);
+                return response()->json(['success' => false, 'message' => 'Đơn cần chữ ký người làm đơn và tổ trưởng khác người làm đơn.'], 422);
             }
             if ($requestForm->digital_signature_supervisor && $requestForm->finalizeApproval()) {
-                return response()->json(['success' => true, 'message' => 'Đơn tăng ca đã được duyệt.', 'data' => $requestForm]);
+                return response()->json(['success' => true, 'message' => 'Đơn yêu cầu đã được duyệt.', 'data' => $requestForm]);
             }
         }
 
@@ -446,7 +446,7 @@ class EmpRequestFormController extends Controller
             ], 403);
         }
 
-        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval()) {
+        if ($requestForm->usesTwoSignatures() && $requestForm->requiresManagerApproval()) {
             return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);
         }
 
@@ -506,6 +506,8 @@ class EmpRequestFormController extends Controller
         }
         if ($request->type === RequestForm::TYPE_DON_XIN_TANG_CA) {
             $request->validate(\App\Services\OvertimeApprovalService::rules());
+        }
+        if (in_array($request->type, [RequestForm::TYPE_DON_XIN_TANG_CA, RequestForm::TYPE_DON_XIN_RA_NGOAI], true)) {
             $request->validate([
                 'supervisor_id' => (new RequestForm(['employee_id' => Auth::id()]))->requiresManagerApproval()
                     ? ['nullable']
@@ -546,7 +548,7 @@ class EmpRequestFormController extends Controller
 
             // Lấy thông tin supervisor để gửi email thông báo (nếu có)
             $supervisor = null;
-            if (! empty($createData['supervisor_id']) && ! ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval())) {
+            if (! empty($createData['supervisor_id']) && ! ($requestForm->usesTwoSignatures() && $requestForm->requiresManagerApproval())) {
                 $supervisor = \App\Models\Employee::select('id', 'name', 'email', 'phone')
                     ->find($createData['supervisor_id']);
             }
@@ -631,7 +633,7 @@ class EmpRequestFormController extends Controller
                 ];
 
                 // Dispatch job để gửi email cho quản lý nhà máy với URL riêng
-                if ($requestForm->type !== RequestForm::TYPE_DON_XIN_TANG_CA || $requestForm->requiresManagerApproval()) {
+                if (! $requestForm->usesTwoSignatures() || $requestForm->requiresManagerApproval()) {
                     SendRequestFormNotificationJob::dispatch($requestForm, $factoryManager, $approvalUrlManager);
 
                     Log::info('📤 Đã thêm job gửi email cho quản lý nhà máy vào queue', [
@@ -755,6 +757,8 @@ class EmpRequestFormController extends Controller
                 ], 403);
             }
             $request->validate(\App\Services\OvertimeApprovalService::rules());
+        }
+        if ($requestForm->usesTwoSignatures()) {
             if ($request->has('supervisor_id') && ! $requestForm->requiresManagerApproval()) {
                 $request->validate(['supervisor_id' => ['required', \Illuminate\Validation\Rule::in(RequestFormAccess::supervisors()->pluck('id')->all()), 'not_in:'.Auth::id()]]);
             }
@@ -767,7 +771,7 @@ class EmpRequestFormController extends Controller
                 'form_data' => $request->form_data ?? $requestForm->form_data,
             ];
 
-            if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $request->has('supervisor_id')) {
+            if ($requestForm->usesTwoSignatures() && $request->has('supervisor_id')) {
                 $updateData['supervisor_id'] = $request->supervisor_id;
             }
 
@@ -916,7 +920,7 @@ class EmpRequestFormController extends Controller
         }
 
         // Tạo instance tạm để lấy signature fields
-        $tempForm = new RequestForm(['type' => $type]);
+        $tempForm = new RequestForm(['type' => $type, 'employee_id' => Auth::id()]);
         $signatureFields = $tempForm->getDigitalSignatureFields();
 
         return response()->json([

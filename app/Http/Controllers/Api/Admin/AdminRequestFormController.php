@@ -159,13 +159,13 @@ class AdminRequestFormController extends Controller
             ], 403);
         }
 
-        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && ! $requestForm->requiresManagerApproval() && $request->input('action') === 'approve') {
-            // Employee-submitted overtime is approved by its assigned supervisor, not a manager signature.
+        if ($requestForm->usesTwoSignatures() && ! $requestForm->requiresManagerApproval() && $request->input('action') === 'approve') {
+            // Employee-submitted overtime/outside requests are approved by its assigned supervisor, not a manager signature.
             return app(\App\Http\Controllers\Api\Employee\EmpRequestFormController::class)
                 ->approveBySupervisor($request, $id);
         }
 
-        if ($requestForm->type === RequestForm::TYPE_DON_XIN_TANG_CA && $requestForm->requiresManagerApproval()
+        if ($requestForm->usesTwoSignatures() && $requestForm->requiresManagerApproval()
             && (in_array((string) Auth::id(), ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822'], true)
                 || (string) Auth::id() === (string) $requestForm->employee_id)) {
             return response()->json(['success' => false, 'message' => 'Đơn này cần quản lý nhà máy duyệt.'], 403);

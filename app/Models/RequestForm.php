@@ -102,6 +102,11 @@ class RequestForm extends Model
         ];
     }
 
+    public function usesTwoSignatures(): bool
+    {
+        return in_array($this->type, [self::TYPE_DON_XIN_TANG_CA, self::TYPE_DON_XIN_RA_NGOAI], true);
+    }
+
     public function requiresManagerApproval(): bool
     {
         return in_array((string) $this->employee_id, ['25060406', '22120703', '22120905', '22120304', '22122809', '22121822',
@@ -110,7 +115,7 @@ class RequestForm extends Model
 
     public function hasRequiredApprovalSignatures(): bool
     {
-        if ($this->type === self::TYPE_DON_XIN_TANG_CA) {
+        if ($this->usesTwoSignatures()) {
             if ($this->requiresManagerApproval()) {
                 return ! empty($this->digital_signature_applicant) && ! empty($this->digital_signature_manager)
                     && ! empty($this->manager_approved_by) && (string) $this->manager_approved_by !== (string) $this->employee_id;
@@ -135,7 +140,7 @@ class RequestForm extends Model
     /** Finalize pending forms using the required approver for their type. */
     public function finalizeApproval(): bool
     {
-        $approver = $this->type === self::TYPE_DON_XIN_TANG_CA && ! $this->requiresManagerApproval() ? $this->supervisor_approved_by : $this->manager_approved_by;
+        $approver = $this->usesTwoSignatures() && ! $this->requiresManagerApproval() ? $this->supervisor_approved_by : $this->manager_approved_by;
         if ($this->status !== self::STATUS_PENDING || ! $this->hasRequiredApprovalSignatures()
             || ! $approver) {
             return false;
@@ -258,7 +263,7 @@ class RequestForm extends Model
      */
     public function getDigitalSignatureFields(): array
     {
-        if ($this->type === self::TYPE_DON_XIN_TANG_CA) {
+        if ($this->usesTwoSignatures()) {
             return [
                 'digital_signature_applicant' => 'Chữ ký người làm đơn',
                 ($this->requiresManagerApproval() ? 'digital_signature_manager' : 'digital_signature_supervisor') => 'Chữ ký người duyệt',
