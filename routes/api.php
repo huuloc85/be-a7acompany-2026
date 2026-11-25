@@ -117,6 +117,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
 
     // Request Forms Management (Quản Lý Đơn Yêu Cầu)
     Route::middleware(['api.can:view_request_forms,view_employee_management'])->prefix('request-forms')->group(function () {
+        Route::get('/employees/{id}', [\App\Http\Controllers\Api\Admin\ReferenceDataController::class, 'requestEmployee']);
         Route::get('/', [AdminRequestFormController::class, 'index']);  // Xem tất cả đơn
         Route::get('/statistics', [AdminRequestFormController::class, 'getStatistics']); // Thống kê
         Route::get('/{id}', [AdminRequestFormController::class, 'show']); // Xem chi tiết đơn
@@ -126,6 +127,7 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
 
     // Attendance Records (Quản Lý Chấm Công)
     Route::middleware(['api.can:view_attendance'])->prefix('attendances')->group(function () {
+        Route::get('/schedule-details', [\App\Http\Controllers\Api\Admin\ReferenceDataController::class, 'attendanceSchedule']);
         Route::get('/employees', [AttendanceHistoryController::class, 'employees']);
         Route::post('/overtime-approval', [\App\Http\Controllers\Api\Admin\OvertimeApprovalController::class, 'store'])
             ->middleware(\App\Http\Middleware\API\CheckAdmin::class);
@@ -169,6 +171,12 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::delete('/system/clear', [LogController::class, 'clearSystemLogs'])->middleware('api.permission');
     });
 
+    Route::middleware('api.can:view_salary_total')->prefix('payroll-sources')->group(function () {
+        Route::get('/attendances', [\App\Http\Controllers\Api\Admin\PayrollSourceController::class, 'attendances'])
+            ->middleware(\App\Http\Middleware\RecentAttendanceWindow::class);
+        Route::get('/request-forms', [\App\Http\Controllers\Api\Admin\PayrollSourceController::class, 'requestForms']);
+    });
+
     // Dedicated catalogue, independent of the legacy Excel salary import.
     Route::get('/payroll-drafts/{company}/{period}', [\App\Http\Controllers\Api\Admin\PayrollPublicationController::class, 'show']);
     Route::put('/payroll-drafts/{company}/{period}', [\App\Http\Controllers\Api\Admin\PayrollPublicationController::class, 'save']);
@@ -188,6 +196,9 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         Route::get('/{id}', [SalaryController::class, 'getSalary']);
         Route::delete('/{id}', [SalaryController::class, 'deleteSalary']);
     });
+
+    Route::get('/reference-data/schedule-categories', [ScheduleCategoryController::class, 'index'])
+        ->middleware('api.can:view_attendance,view_employee_management');
 
     Route::middleware([\App\Http\Middleware\API\CheckScheduleAccess::class])->prefix('schedule-categories')->group(function () {
         Route::get('/', [ScheduleCategoryController::class, 'index']);   // Lấy danh sách danh mục
@@ -241,11 +252,13 @@ Route::middleware(['auth:sanctum', 'check.token.expiration'])->group(function ()
         // Route::delete('/{id}', [TotalQuantityController::class, 'delete']);
     });
 
+    Route::get('/stamps/history', [StampController::class, 'getStampHistory'])
+        ->middleware('api.can:view_label_management,view_history_print,view_labels_to_print');
+
     Route::middleware(['api.can:view_label_management'])->prefix('stamps')->group(function () {
         Route::post('/manual-product', [StampController::class, 'prepareManualProduct']);
         Route::post('/check-duplicate', [StampController::class, 'checkDuplicate']);
         Route::put('/savePrint', [StampController::class, 'savePrint']);
-        Route::get('/history', [StampController::class, 'getStampHistory']);
         Route::middleware(['api.permission'])->delete('/history/{id}', [StampController::class, 'deleteStampHistory']);
         Route::post('/reject/{id}', [StampController::class, 'rejectPrint']);
     });
